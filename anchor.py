@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import stat
+import time
 import getpass
 import argparse
 import subprocess
@@ -608,13 +609,23 @@ def run_agent(project_path: str, model: str) -> None:
     for turn in range(1, MAX_TURNS + 1):
         print(f"\n[{turn:02d}] Thinking...", end=" ", flush=True)
 
-        response = litellm.completion(
-            model=model,
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            max_tokens=4096,
-        )
+        # Retry on rate limit with exponential backoff
+        for attempt in range(5):
+            try:
+                response = litellm.completion(
+                    model=model,
+                    messages=messages,
+                    tools=TOOLS,
+                    tool_choice="auto",
+                    max_tokens=4096,
+                )
+                break
+            except litellm.RateLimitError as e:
+                wait = 2 ** attempt * 10  # 10s, 20s, 40s, 80s, 160s
+                print(f"\n     ⏳ Rate limit hit — retrying in {wait}s...")
+                time.sleep(wait)
+                if attempt == 4:
+                    raise e
 
         msg = response.choices[0].message
 
