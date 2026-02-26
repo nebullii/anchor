@@ -637,7 +637,18 @@ def run_agent(project_path: str, model: str) -> None:
         messages.append(assistant_entry)
 
         if not msg.tool_calls:
-            # Agent printed final message
+            # If agent narrated but hasn't finished all phases yet, nudge it to continue
+            deploy_done = any("cicd-key.json" in f or "deploy.sh" in f for f in files_written)
+            if not deploy_done:
+                if msg.content:
+                    print(f"\n{msg.content}")
+                print(f"\n[nudge] Agent stopped early — pushing it to continue...")
+                messages.append({
+                    "role": "user",
+                    "content": "Continue. Do not summarize or plan — use tools to execute the next phase now."
+                })
+                continue
+            # All done
             if msg.content:
                 print(f"\n{msg.content}")
             break
