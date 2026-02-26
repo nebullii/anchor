@@ -10,13 +10,14 @@ Anchor is an AI agent that scans your project, figures out your stack, detects a
 
 ## What Anchor generates
 
-After running Anchor on your project, you get 4 new files inside your project folder:
+After running Anchor on your project, you get 5 new files inside your project folder:
 
 | File | What it is |
 |------|-----------|
 | `Dockerfile` | Packages your app into a container |
-| `deploy.sh` | Runs the full deploy from your terminal |
+| `deploy.sh` | Runs the first deploy + sets up CI/CD from your terminal |
 | `.gcloudignore` | Tells Google what NOT to upload (secrets, venvs, etc.) |
+| `.github/workflows/deploy.yml` | Auto-deploys every time you push to `main` |
 | `DEPLOY_README.md` | Step-by-step instructions specific to your project |
 
 ---
@@ -173,6 +174,22 @@ The whole thing takes about 3–5 minutes.
 
 ## After deploying
 
+### Set up CI/CD (auto-deploy on push)
+
+After `./deploy.sh` finishes, it prints instructions to connect GitHub Actions:
+
+1. It generates a `cicd-key.json` service account key — copy its contents
+2. Go to your GitHub repo → **Settings → Secrets and variables → Actions**
+3. Add a **secret**: `GCP_SA_KEY` = paste the full contents of `cicd-key.json`
+4. Add **variables**: `GCP_PROJECT_ID`, `GCP_APP_NAME`, `GCP_REGION`
+5. Delete the key file: `rm cicd-key.json`
+
+From now on, every `git push` to `main` auto-deploys via `.github/workflows/deploy.yml`.
+
+---
+
+### Useful commands
+
 ```bash
 # See your live URL
 gcloud run services describe APP_NAME --region=us-central1 --project=PROJECT_ID --format="value(status.url)"
@@ -180,7 +197,7 @@ gcloud run services describe APP_NAME --region=us-central1 --project=PROJECT_ID 
 # Watch live logs
 gcloud run logs read APP_NAME --region=us-central1 --project=PROJECT_ID
 
-# Redeploy after making changes
+# Manual redeploy (CI/CD handles this automatically after setup)
 ./deploy.sh
 
 # Take it down completely

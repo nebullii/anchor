@@ -33,7 +33,7 @@ SKIP_EXTENSIONS = {
     ".pdf", ".woff", ".woff2", ".ttf", ".eot", ".bin", ".db", ".sqlite",
 }
 
-OUTPUT_FILES = {"Dockerfile", "deploy.sh", ".gcloudignore", "DEPLOY_README.md"}
+OUTPUT_FILES = {"Dockerfile", "deploy.sh", ".gcloudignore", "DEPLOY_README.md", "deploy.yml"}
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
@@ -451,15 +451,125 @@ Include ALL of the following sections:
    gcloud run services delete APP_NAME --region=us-central1 --project=PROJECT_ID
    ```
 
+──────────────────────────────────────────
+FILE 5: {project_path}/.github/workflows/deploy.yml
+──────────────────────────────────────────
+Generate a GitHub Actions workflow so every `git push` to main auto-deploys.
+
+```yaml
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{{{ vars.GCP_PROJECT_ID }}}}
+  APP_NAME: ${{{{ vars.GCP_APP_NAME }}}}
+  REGION: ${{{{ vars.GCP_REGION }}}}
+  IMAGE: ${{{{ vars.GCP_REGION }}}}-docker.pkg.dev/${{{{ vars.GCP_PROJECT_ID }}}}/${{{{ vars.GCP_APP_NAME }}}}/${{{{ vars.GCP_APP_NAME }}}}:${{{{ github.sha }}}}
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{{{ secrets.GCP_SA_KEY }}}}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image via Cloud Build
+        run: |
+          gcloud builds submit . \\
+            --tag="${{{{ env.IMAGE }}}}" \\
+            --project="${{{{ env.PROJECT_ID }}}}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${{{{ env.APP_NAME }}}}" \\
+            --image="${{{{ env.IMAGE }}}}" \\
+            --platform=managed \\
+            --region="${{{{ env.REGION }}}}" \\
+            --allow-unauthenticated \\
+            --min-instances=0 \\
+            --max-instances=10 \\
+            --memory=512Mi \\
+            --cpu=1 \\
+            --port=<detected_port> \\
+            --set-secrets="<ALL_DETECTED_SECRETS_HERE>" \\
+            --project="${{{{ env.PROJECT_ID }}}}"
+
+      - name: Print live URL
+        run: |
+          echo "✅ Deployed:"
+          gcloud run services describe "${{{{ env.APP_NAME }}}}" \\
+            --region="${{{{ env.REGION }}}}" \\
+            --project="${{{{ env.PROJECT_ID }}}}" \\
+            --format="value(status.url)"
+```
+
+The deploy.sh must also include a CI/CD setup section AFTER the first successful deploy:
+
+```bash
+echo "⚙️  Setting up CI/CD (GitHub Actions)..."
+SA_NAME="anchor-cicd"
+SA_EMAIL="${{SA_NAME}}@${{PROJECT_ID}}.iam.gserviceaccount.com"
+
+# Create service account
+gcloud iam service-accounts create "$SA_NAME" \\
+  --display-name="Anchor CI/CD" \\
+  --project="$PROJECT_ID" 2>/dev/null || true
+
+# Grant only the roles it needs
+for ROLE in roles/run.admin roles/cloudbuild.builds.builder \\
+            roles/artifactregistry.writer roles/secretmanager.secretAccessor \\
+            roles/iam.serviceAccountUser; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
+    --member="serviceAccount:$SA_EMAIL" \\
+    --role="$ROLE" --quiet
+done
+
+# Generate key for GitHub Actions
+gcloud iam service-accounts keys create cicd-key.json \\
+  --iam-account="$SA_EMAIL" \\
+  --project="$PROJECT_ID"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  CI/CD setup complete. Add these to GitHub:"
+echo "  Repo → Settings → Secrets and variables"
+echo ""
+echo "  SECRETS (Settings → Secrets → Actions):"
+echo "  GCP_SA_KEY = contents of cicd-key.json (copy the whole JSON)"
+echo ""
+echo "  VARIABLES (Settings → Variables → Actions):"
+echo "  GCP_PROJECT_ID = $PROJECT_ID"
+echo "  GCP_APP_NAME   = $APP_NAME"
+echo "  GCP_REGION     = $REGION"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "⚠️  Delete cicd-key.json after copying it to GitHub"
+echo "    rm cicd-key.json"
+```
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FINAL RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Scan every file BEFORE writing any output file
 - min-instances=0 is non-negotiable — it is what keeps the bill at $0
 - Budget alert must always be in deploy.sh — no exceptions
+- CI/CD workflow must always be generated — every push to main should redeploy
+- The cicd-key.json warning (delete after use) must always be in deploy.sh output
 - If project uses SQLite: add a clear warning in DEPLOY_README.md that data won't persist
 - If project uses Cloud SQL / Redis / Memorystore: do NOT set them up — warn and suggest free alternatives
-- Never modify any existing project file — only write the 4 output files
+- Never modify any existing project file — only write the 5 output files
 - Make deploy.sh runnable out-of-the-box after filling in PROJECT_ID and APP_NAME
 
 Start scanning now.
