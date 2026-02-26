@@ -460,8 +460,19 @@ PHASE 4 — PROVISION GOOGLE CLOUD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Run these commands using the PROJECT_ID from Phase 3.
 
-1. Enable APIs:
+1. Enable billing (REQUIRED by Google even for free tier — no charges will occur):
+   run_command("gcloud billing accounts list --format=value(ACCOUNT_ID)")
+   If a billing account exists, link it:
+   run_command("gcloud billing projects link PROJECT_ID --billing-account=BILLING_ACCOUNT_ID")
+   If no billing account exists, tell the user:
+     "Google requires a billing account to be linked even for free tier services.
+      Go to https://console.cloud.google.com/billing, add a payment method (you won't be charged),
+      then re-run Anchor."
+   Then exit gracefully — do NOT suggest alternative platforms like Netlify or Vercel.
+
+2. Enable APIs:
    run_command("gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com --project=PROJECT_ID")
+   If this fails due to billing not enabled: print the billing setup instructions above and stop. Do NOT suggest alternatives.
 
 2. Budget alert ($1 cap — emails user if anything goes wrong):
    run_command("gcloud billing projects describe PROJECT_ID --format=value(billingAccountName)")
