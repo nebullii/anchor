@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
 Anchor — GCloud Deploy Agent
-Scans any project and generates Google Cloud Run deployment files.
+One command. Scans your project, asks for secrets, deploys to Cloud Run. Free.
 """
 
 import os
 import sys
 import json
 import stat
+import getpass
 import argparse
+import subprocess
 from pathlib import Path
 
 import litellm
@@ -17,7 +19,7 @@ import litellm
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_FILE_BYTES = 60_000
-MAX_TURNS = 60
+MAX_TURNS = 80
 
 SKIP_DIRS = {
     ".git", "__pycache__", "node_modules", ".venv", "venv", "env",
@@ -48,10 +50,11 @@ def list_directory(path: str, recursive: bool = False) -> str:
     results = []
     if recursive:
         for item in sorted(p.rglob("*")):
-            # Skip noisy dirs
             if any(part in SKIP_DIRS for part in item.parts):
                 continue
-            if item.name.startswith(".") and item.name not in {".env", ".env.example", ".env.sample", ".gitignore"}:
+            if item.name.startswith(".") and item.name not in {
+                ".env", ".env.example", ".env.sample", ".gitignore"
+            }:
                 continue
             if item.suffix in SKIP_EXTENSIONS:
                 continue
@@ -78,8 +81,10 @@ def read_file(path: str) -> str:
         return f"SKIPPED: Binary/media file ({p.suffix})"
     size = p.stat().st_size
     if size > MAX_FILE_BYTES:
-        return f"SKIPPED: File too large ({size:,} bytes). Only reading first {MAX_FILE_BYTES:,} chars.\n\n" + \
-               p.read_text(encoding="utf-8", errors="replace")[:MAX_FILE_BYTES]
+        return (
+            f"TRUNCATED: File too large ({size:,} bytes), showing first {MAX_FILE_BYTES:,} chars.\n\n"
+            + p.read_text(encoding="utf-8", errors="replace")[:MAX_FILE_BYTES]
+        )
     try:
         return p.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
@@ -98,10 +103,122 @@ def write_file(path: str, content: str) -> str:
         return f"ERROR writing file: {e}"
 
 
+def run_command(command: str, interactive: bool = False) -> str:
+    """
+    Run a shell command.
+    interactive=True  → inherits terminal stdio (for gcloud auth login, etc.)
+    interactive=False → captures output and returns it to the agent
+    """
+    print(f"\n     $ {command}")
+    try:
+        if interactive:
+            result = subprocess.run(command, shell=True)
+            return f"Exited with code {result.returncode}"
+        else:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            out = result.stdout.strip()
+            err = result.stderr.strip()
+            combined = out
+            if err:
+                combined += f"\n[stderr] {err}"
+            if result.returncode != 0:
+                combined += f"\n[exit code] {result.returncode}"
+            return combined or "(no output)"
+    except subprocess.TimeoutExpired:
+        return "ERROR: Command timed out after 10 minutes"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def ask_user(question: str) -> str:
+    """
+    Prompt the user for a NON-SECRET value (project ID, app name, choices).
+    NEVER use for API keys, passwords, tokens — use push_secrets instead.
+    """
+    print(f"\n{'─'*60}")
+    print(f"  Anchor needs input:")
+    try:
+        value = input(f"  {question}: ")
+    except (KeyboardInterrupt, EOFError):
+        print("\nAborted.")
+        sys.exit(1)
+    print(f"{'─'*60}")
+    return value.strip()
+
+
+def push_secrets(env_file: str, project_id: str) -> str:
+    """
+    Read a .env-style file and push each key=value to GCloud Secret Manager.
+    Secret VALUES never leave this function — they are NEVER sent to the LLM.
+    The env file is deleted after all secrets are pushed successfully.
+    Returns the --set-secrets string ready to paste into gcloud run deploy.
+    """
+    p = Path(env_file)
+    if not p.exists():
+        return f"ERROR: {env_file} not found. Create it with your secret values first."
+
+    secrets_pushed: list[str] = []
+    errors: list[str] = []
+
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()
+    except Exception as e:
+        return f"ERROR reading {env_file}: {e}"
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not key or not value:
+            errors.append(f"SKIPPED {key}: empty value — fill it in and re-run")
+            continue
+
+        # Create secret — if it already exists, add a new version
+        try:
+            r1 = subprocess.run(
+                ["gcloud", "secrets", "create", key, "--data-file=-", f"--project={project_id}"],
+                input=value, capture_output=True, text=True,
+            )
+            if r1.returncode != 0:
+                r2 = subprocess.run(
+                    ["gcloud", "secrets", "versions", "add", key, "--data-file=-", f"--project={project_id}"],
+                    input=value, capture_output=True, text=True,
+                )
+                if r2.returncode != 0:
+                    errors.append(f"ERROR on {key}: {r2.stderr.strip()}")
+                    continue
+            secrets_pushed.append(key)
+        except Exception as e:
+            errors.append(f"ERROR on {key}: {e}")
+
+    set_secrets = ",".join(f"{k}={k}:latest" for k in secrets_pushed)
+
+    lines_out = [f"Pushed: {', '.join(secrets_pushed) if secrets_pushed else 'none'}"]
+    if errors:
+        lines_out.append(f"Errors: {'; '.join(errors)}")
+    lines_out.append(f"File kept at: {env_file} (already in .gcloudignore and .gitignore — never committed or deployed)")
+    lines_out.append(f"Use in gcloud run deploy: --set-secrets={set_secrets}")
+    return "\n".join(lines_out)
+
+
 TOOL_MAP = {
     "list_directory": list_directory,
     "read_file": read_file,
     "write_file": write_file,
+    "run_command": run_command,
+    "ask_user": ask_user,
+    "push_secrets": push_secrets,
 }
 
 TOOLS = [
@@ -109,19 +226,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_directory",
-            "description": (
-                "List files and directories at a path. "
-                "Use recursive=true to see the full project tree at once."
-            ),
+            "description": "List files and directories at a path. Use recursive=true to see the full project tree.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Directory path to list"},
-                    "recursive": {
-                        "type": "boolean",
-                        "description": "If true, list all files recursively",
-                        "default": False,
-                    },
+                    "path": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": False},
                 },
                 "required": ["path"],
             },
@@ -134,9 +244,7 @@ TOOLS = [
             "description": "Read the full contents of a file.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Absolute path to the file"}
-                },
+                "properties": {"path": {"type": "string"}},
                 "required": ["path"],
             },
         },
@@ -146,16 +254,84 @@ TOOLS = [
         "function": {
             "name": "write_file",
             "description": (
-                "Write content to a file on disk. "
-                "Use ONLY to write: Dockerfile, deploy.sh, .gcloudignore, DEPLOY_README.md."
+                "Write a file to disk. Use ONLY for: "
+                "Dockerfile, deploy.sh, .gcloudignore, DEPLOY_README.md, "
+                ".github/workflows/deploy.yml"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute path to write"},
-                    "content": {"type": "string", "description": "File content"},
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
                 },
                 "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": (
+                "Execute a shell command. Use for all gcloud, docker, gsutil commands. "
+                "Set interactive=true ONLY for commands that need user input in the terminal "
+                "(e.g. gcloud auth login). All other commands use interactive=false."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The shell command to run"},
+                    "interactive": {
+                        "type": "boolean",
+                        "description": "Set true only for interactive commands like gcloud auth login",
+                        "default": False,
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "description": (
+                "Prompt the user for a NON-SECRET value in the terminal. "
+                "Use ONLY for: project ID selection, app name, yes/no choices. "
+                "NEVER use for API keys, passwords, or tokens — use push_secrets for those."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The question to display"},
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "push_secrets",
+            "description": (
+                "Read a .env-style file the user has filled in and push each secret to "
+                "GCloud Secret Manager. Secret values NEVER pass through the LLM. "
+                "The file is deleted from disk after pushing. "
+                "Returns the --set-secrets string to use in gcloud run deploy."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "env_file": {
+                        "type": "string",
+                        "description": "Absolute path to the .env file containing key=value secrets",
+                    },
+                    "project_id": {
+                        "type": "string",
+                        "description": "GCloud project ID to push secrets into",
+                    },
+                },
+                "required": ["env_file", "project_id"],
             },
         },
     },
@@ -166,411 +342,232 @@ TOOLS = [
 
 def build_prompt(project_path: str) -> str:
     return f"""\
-You are Anchor, an expert cloud deployment agent for Google Cloud Run.
+You are Anchor, a cloud deployment agent for Google Cloud Run.
 
-Your mission: scan the project at `{project_path}`, deeply understand it, and generate 4 deployment files.
-The user must NEVER be charged by Google. Every decision you make must stay within the free tier.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — SCAN EXHAUSTIVELY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Call list_directory("{project_path}", recursive=true) first to see the full tree.
-2. Read EVERY file that could reveal:
-   - Language / runtime (requirements.txt, pyproject.toml, package.json, go.mod, Cargo.toml, Gemfile, pom.xml, *.csproj)
-   - Framework and entry point (main.py, app.py, server.js, index.js, main.go, cmd/, src/)
-   - Port the app listens on (look for PORT env var, app.run(port=...), listen(:8080), etc.)
-   - ALL secrets and env vars (.env, .env.example, .env.sample, os.environ, os.getenv, process.env, config files, settings files)
-   - Any existing Dockerfile or docker-compose (understand the intended setup)
-   - STORAGE PATTERNS — look for any of:
-       * File uploads (multer, UploadFile, multipart, boto3, S3, open() for writing, fs.writeFile)
-       * SQL databases (sqlite3, SQLAlchemy, psycopg2, pg, mysql, sequelize, prisma, diesel)
-       * NoSQL (pymongo, mongoose, Motor, firebase-admin, Firestore)
-       * Key-value / cache (redis, ioredis, aioredis, memcached)
-       * ORM models (models.py, schema.prisma, migrations/)
-       * Any DATABASE_URL, REDIS_URL, MONGO_URI, STORAGE_BUCKET env vars
-3. Do NOT skip any file — a missed secret, wrong port, or undetected storage need breaks the deploy.
+Your job: scan the project at `{project_path}`, then FULLY DEPLOY IT — no manual steps left for the user.
+The user must NEVER be charged. The user only provides their LLM API key. You handle everything else.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STORAGE DECISION RULES (read carefully)
+PHASE 1 — SCAN THE PROJECT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Cloud Run containers have an EPHEMERAL filesystem — any files written inside the container
-are lost on restart. You MUST provision the right storage based on what you detect:
+1. list_directory("{project_path}", recursive=true) — see the full tree
+2. Read EVERY relevant file:
+   - Dependency manifests: requirements.txt, pyproject.toml, package.json, go.mod, Cargo.toml, Gemfile
+   - Entry points: main.py, app.py, server.js, index.js, main.go, cmd/, src/
+   - Config and secrets: .env, .env.example, .env.sample, config.py, settings.py, *.yaml, *.toml
+   - Any existing Dockerfile or docker-compose
+   - Storage patterns: file uploads, DB connections, cache usage (see storage rules below)
+3. After scanning, you will know: language, framework, entry point, port, all secrets, storage needs.
 
+STORAGE RULES:
 ┌──────────────────────┬──────────────────────────────────────────────────────┐
-│ Detected pattern     │ What to do                                           │
+│ Detected             │ Action                                               │
 ├──────────────────────┼──────────────────────────────────────────────────────┤
-│ File uploads / blobs │ Provision Cloud Storage (GCS) bucket — FREE 5GB/mo  │
-│ SQLite               │ WARN: not persistent. Migrate to Firestore (free)    │
-│ PostgreSQL / MySQL   │ WARN: Cloud SQL costs money. Suggest Neon free tier  │
-│ Redis / cache        │ WARN: Memorystore costs money. Suggest Upstash free  │
-│ MongoDB              │ WARN: Atlas free tier (external). Not on GCloud free │
-│ Firestore / Firebase │ Set up Firestore native mode — FREE 1GB/50K reads   │
-│ No storage detected  │ Skip storage section entirely                        │
+│ File uploads / blobs │ Create GCS bucket (free: 5GB/month)                 │
+│ SQLite               │ WARN user — not persistent on Cloud Run              │
+│ PostgreSQL / MySQL   │ WARN — Cloud SQL costs money, suggest Neon free tier │
+│ Redis                │ WARN — Memorystore costs money, suggest Upstash free │
+│ Firestore / Firebase │ Create Firestore database (free: 1GB/50K reads/day) │
+│ No storage           │ Skip storage entirely                                │
 └──────────────────────┴──────────────────────────────────────────────────────┘
 
-FREE TIER STORAGE LIMITS TO STAY WITHIN:
-- Cloud Storage (GCS): 5 GB storage, 1 GB egress/month — free
-- Firestore: 1 GB storage, 50K reads/day, 20K writes/day, 20K deletes/day — free
-- Secret Manager: first 6 secret versions free, then $0.06/10K access — practically free
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2 — GENERATE 4 FILES
+PHASE 2 — GENERATE FILES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Write all 4 files into the project directory: {project_path}/
+Write all files before running any gcloud commands.
 
-──────────────────────────────────────────
-FILE 1: {project_path}/Dockerfile
-──────────────────────────────────────────
-- Use the exact slim/alpine base image for the detected stack
-  (python:3.11-slim, node:20-alpine, golang:1.22-alpine, ruby:3.3-slim, etc.)
-- Multi-stage build where it reduces image size (Go, Node builds)
-- Copy only runtime-needed files (no .env, secrets, tests, docs)
-- Install only production dependencies
-- Expose the correct PORT (default 8080 if unknown)
-- Set ENV PORT=<detected_port>
-- Use the exact correct start command for the framework
+FILE: {project_path}/Dockerfile
+- Correct slim/alpine base image for the stack
+- Multi-stage build for Go/Node to minimize size
+- Only copy runtime-needed files
+- Expose the correct PORT, set ENV PORT=<port>
+- Correct start command for the framework
 
-──────────────────────────────────────────
-FILE 2: {project_path}/deploy.sh
-──────────────────────────────────────────
-Use EXACTLY this structure. Include/omit storage sections based on what you detected.
+FILE: {project_path}/.gcloudignore
+- Exclude: .git, .env, .env.*, .env.anchor, venv/, .venv/, __pycache__/, *.pyc,
+  node_modules/, dist/, build/, .next/, *.pem, *.key, *.log, *.sqlite,
+  tests/, docs/, *.md, Makefile, docker-compose*, .github/, cicd-key.json
 
-```bash
-#!/bin/bash
-set -euo pipefail
-
-# ┌──────────────────────────────────────────────────────────┐
-# │  ANCHOR — Google Cloud Run Deploy Script                 │
-# │  100% free tier — you will not be charged               │
-# └──────────────────────────────────────────────────────────┘
-
-# ── Edit these two lines before running ───────────────────
-PROJECT_ID="your-gcloud-project-id"   # run: gcloud projects list
-APP_NAME="my-app"                      # lowercase letters and hyphens only
-# ──────────────────────────────────────────────────────────
-
-REGION="us-central1"
-PORT=<detected_port>
-IMAGE="${{REGION}}-docker.pkg.dev/${{PROJECT_ID}}/${{APP_NAME}}/${{APP_NAME}}:latest"
-
-# ── Export your secret values before running ──────────────
-# <one commented export line per secret found in the project>
-# export MY_API_KEY=""
-# export DATABASE_URL=""
-# ──────────────────────────────────────────────────────────
-
-# ── Preflight: verify required secrets are set ────────────
-# <one block per required secret — exit early if missing>
-# if [ -z "${{MY_API_KEY:-}}" ]; then
-#   echo "ERROR: export MY_API_KEY before running deploy.sh"
-#   exit 1
-# fi
-
-echo "🔧 Enabling Google Cloud APIs..."
-gcloud services enable \\
-  run.googleapis.com \\
-  artifactregistry.googleapis.com \\
-  cloudbuild.googleapis.com \\
-  secretmanager.googleapis.com \\
-  <storage_apis_if_needed> \\
-  --project="$PROJECT_ID"
-
-# ── BUDGET ALERT (protects you from unexpected charges) ───
-echo "💰 Setting up $1 budget alert..."
-BILLING_ACCOUNT=$(gcloud billing projects describe "$PROJECT_ID" \\
-  --format="value(billingAccountName)" | sed 's/billingAccounts\///')
-gcloud billing budgets create \\
-  --billing-account="$BILLING_ACCOUNT" \\
-  --display-name="anchor-${{APP_NAME}}-guard" \\
-  --budget-amount=1USD \\
-  --threshold-rule=percent=0.3 \\
-  --threshold-rule=percent=0.8 \\
-  --threshold-rule=percent=1.0 2>/dev/null || echo "  (budget already exists, skipping)"
-# NOTE: This alerts you by email if spend approaches $1.
-# Cloud Run free tier = $0 for normal usage. Alert = safety net only.
-
-echo "📦 Creating Artifact Registry repo (skips if exists)..."
-gcloud artifacts repositories create "$APP_NAME" \\
-  --repository-format=docker \\
-  --location="$REGION" \\
-  --project="$PROJECT_ID" 2>/dev/null || true
-
-# ── STORAGE SETUP (only if project needs it) ──────────────
-# === INCLUDE THIS BLOCK only if file uploads / blob storage detected ===
-echo "🗄️  Setting up Cloud Storage bucket (free: 5GB/month)..."
-BUCKET="${{PROJECT_ID}}-${{APP_NAME}}-storage"
-gcloud storage buckets create "gs://${{BUCKET}}" \\
-  --location="$REGION" \\
-  --project="$PROJECT_ID" 2>/dev/null || true
-# Bucket name passed to app as env var (not a secret — not sensitive)
-GCS_BUCKET_ENV="GCS_BUCKET=${{BUCKET}}"
-# === END FILE STORAGE BLOCK ===
-
-# === INCLUDE THIS BLOCK only if Firestore / NoSQL detected ===
-echo "🗄️  Setting up Firestore (free: 1GB / 50K reads per day)..."
-gcloud services enable firestore.googleapis.com --project="$PROJECT_ID"
-gcloud firestore databases create \\
-  --location="$REGION" \\
-  --project="$PROJECT_ID" 2>/dev/null || true
-# === END FIRESTORE BLOCK ===
-
-# === INCLUDE THIS WARNING only if PostgreSQL / MySQL detected ===
-# ⚠️  WARNING: Cloud SQL is NOT free. Your project uses a SQL database.
-# Recommended FREE alternatives:
-#   - Neon (PostgreSQL): https://neon.tech  — free tier, serverless
-#   - Supabase: https://supabase.com        — free tier, PostgreSQL
-# Set your DATABASE_URL secret to your chosen provider's connection string.
-# === END SQL WARNING ===
-
-# === INCLUDE THIS WARNING only if Redis detected ===
-# ⚠️  WARNING: Google Memorystore (Redis) is NOT free.
-# Recommended FREE alternative:
-#   - Upstash: https://upstash.com — free tier Redis, works with Cloud Run
-# Set your REDIS_URL secret to your Upstash connection string.
-# === END REDIS WARNING ===
-
-echo "🔐 Pushing secrets to Secret Manager..."
-# <one block per detected secret — follow this exact pattern for each>
-# echo -n "$MY_API_KEY" | gcloud secrets create MY_API_KEY \\
-#   --data-file=- --project="$PROJECT_ID" 2>/dev/null || \\
-#   echo -n "$MY_API_KEY" | gcloud secrets versions add MY_API_KEY \\
-#   --data-file=- --project="$PROJECT_ID"
-
-echo "🏗  Building and pushing container image via Cloud Build..."
-# Cloud Build free tier: 120 build-minutes/day
-gcloud builds submit . \\
-  --tag="$IMAGE" \\
-  --project="$PROJECT_ID"
-
-echo "🚀 Deploying to Cloud Run (free tier)..."
-gcloud run deploy "$APP_NAME" \\
-  --image="$IMAGE" \\
-  --platform=managed \\
-  --region="$REGION" \\
-  --allow-unauthenticated \\
-  --min-instances=0 \\
-  --max-instances=10 \\
-  --memory=512Mi \\
-  --cpu=1 \\
-  --port="$PORT" \\
-  --set-secrets="MY_SECRET=MY_SECRET:latest" \\
-  --set-env-vars="GCS_BUCKET=${{BUCKET}}" \\
-  --project="$PROJECT_ID"
-# ↑ --set-secrets  → ALL secrets/credentials (API keys, DB passwords, tokens)
-# ↑ --set-env-vars → non-sensitive config only (e.g. bucket name, region)
-# ↑ --min-instances=0 is REQUIRED — this is what keeps your bill at $0
-
-echo ""
-echo "✅ Deployed! Your app is live at:"
-gcloud run services describe "$APP_NAME" \\
-  --region="$REGION" \\
-  --project="$PROJECT_ID" \\
-  --format="value(status.url)"
-
-echo ""
-echo "📊 Free tier usage dashboard:"
-echo "   https://console.cloud.google.com/billing"
-```
-
-RULES for deploy.sh:
-- Only include storage blocks that match what you actually detected. Remove the others.
-- Every secret/credential MUST use --set-secrets. NEVER --set-env-vars for sensitive values.
-- Non-sensitive config (bucket name, region, feature flags) MAY use --set-env-vars.
-- --min-instances=0 is NON-NEGOTIABLE. Removing it causes idle charges.
-- --max-instances=10 caps runaway scaling costs.
-- --memory=512Mi and --cpu=1 stay within free tier per-request quotas.
-- Budget alert must always be included — it's the user's safety net.
-- Add real shell validation (if [ -z ... ]) for every required secret.
-
-──────────────────────────────────────────
-FILE 3: {project_path}/.gcloudignore
-──────────────────────────────────────────
-Exclude from container build:
-.git, .env, .env.*, venv/, .venv/, __pycache__/, *.pyc, *.pyo,
-node_modules/, dist/, build/, .next/, .nuxt/, coverage/, htmlcov/,
-*.pem, *.key, *.log, *.sqlite, *.db, .DS_Store, Thumbs.db,
-tests/, test/, spec/, __tests__/, docs/, *.md, Makefile,
-docker-compose*, .github/, .gitlab-ci.yml, .circleci/,
-and any other file not needed to run the app in production.
-
-──────────────────────────────────────────
-FILE 4: {project_path}/DEPLOY_README.md
-──────────────────────────────────────────
-Include ALL of the following sections:
-
-1. **Prerequisites**
-   - gcloud CLI install: `brew install google-cloud-sdk` or link to cloud.google.com/sdk
-   - Required runtime version (Python X.Y, Node X, Go X, etc.) — not needed inside Docker but useful for context
-   - A Google Cloud account (free — no credit card required for Cloud Run free tier)
-
-2. **One-time setup**
-   - `gcloud auth login`
-   - `gcloud config set project YOUR_PROJECT_ID`
-   - How to find PROJECT_ID: `gcloud projects list`
-
-3. **Fill in deploy.sh**
-   - Set PROJECT_ID (where to find it)
-   - Set APP_NAME (rules: lowercase, hyphens, no spaces)
-
-4. **Set your secrets** (specific to this project)
-   - List every secret variable found and what it should contain
-   - Example: `export OPENAI_API_KEY="sk-..."` then run deploy.sh
-
-5. **Storage setup** (only if storage was detected)
-   - For GCS: bucket is auto-created, use the GCS_BUCKET env var in your code
-   - For Firestore: database is auto-created, use the default database
-   - For SQL/Redis warnings: link to Neon / Upstash and explain how to get free connection string
-
-6. **Run the deploy**
-   ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
-
-7. **Free tier breakdown** — what is free and what are the limits:
-   - Cloud Run: 2M requests/month, 360K GB-seconds, 180K vCPU-seconds
-   - Cloud Build: 120 build-minutes/day
-   - Artifact Registry: 0.5 GB storage free
-   - Secret Manager: 6 active secret versions free
-   - Cloud Storage (if used): 5 GB, 1 GB egress/month
-   - Firestore (if used): 1 GB, 50K reads/day, 20K writes/day
-   - Budget alert: emails you if spend approaches $1 (should never happen)
-
-8. **After deploy — useful commands**
-   ```bash
-   # View live logs
-   gcloud run logs read APP_NAME --region=us-central1 --project=PROJECT_ID
-
-   # Check service status and URL
-   gcloud run services describe APP_NAME --region=us-central1 --project=PROJECT_ID
-
-   # Redeploy after code changes
-   ./deploy.sh
-
-   # Delete everything (stop all billing)
-   gcloud run services delete APP_NAME --region=us-central1 --project=PROJECT_ID
-   ```
-
-──────────────────────────────────────────
-FILE 5: {project_path}/.github/workflows/deploy.yml
-──────────────────────────────────────────
-Generate a GitHub Actions workflow so every `git push` to main auto-deploys.
-
+FILE: {project_path}/.github/workflows/deploy.yml
 ```yaml
 name: Deploy to Cloud Run
-
 on:
   push:
     branches: [main]
-
 env:
   PROJECT_ID: ${{{{ vars.GCP_PROJECT_ID }}}}
   APP_NAME: ${{{{ vars.GCP_APP_NAME }}}}
   REGION: ${{{{ vars.GCP_REGION }}}}
   IMAGE: ${{{{ vars.GCP_REGION }}}}-docker.pkg.dev/${{{{ vars.GCP_PROJECT_ID }}}}/${{{{ vars.GCP_APP_NAME }}}}/${{{{ vars.GCP_APP_NAME }}}}:${{{{ github.sha }}}}
-
 jobs:
   deploy:
-    name: Build & Deploy
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{{{ secrets.GCP_SA_KEY }}}}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Build and push image via Cloud Build
-        run: |
-          gcloud builds submit . \\
-            --tag="${{{{ env.IMAGE }}}}" \\
-            --project="${{{{ env.PROJECT_ID }}}}"
-
-      - name: Deploy to Cloud Run
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build image
+        run: gcloud builds submit . --tag="${{{{ env.IMAGE }}}}" --project="${{{{ env.PROJECT_ID }}}}"
+      - name: Deploy
         run: |
           gcloud run deploy "${{{{ env.APP_NAME }}}}" \\
-            --image="${{{{ env.IMAGE }}}}" \\
-            --platform=managed \\
-            --region="${{{{ env.REGION }}}}" \\
-            --allow-unauthenticated \\
-            --min-instances=0 \\
-            --max-instances=10 \\
-            --memory=512Mi \\
-            --cpu=1 \\
-            --port=<detected_port> \\
-            --set-secrets="<ALL_DETECTED_SECRETS_HERE>" \\
+            --image="${{{{ env.IMAGE }}}}" --platform=managed \\
+            --region="${{{{ env.REGION }}}}" --allow-unauthenticated \\
+            --min-instances=0 --max-instances=10 \\
+            --memory=512Mi --cpu=1 --port=<detected_port> \\
+            --set-secrets="<SECRETS>" \\
             --project="${{{{ env.PROJECT_ID }}}}"
-
-      - name: Print live URL
-        run: |
-          echo "✅ Deployed:"
-          gcloud run services describe "${{{{ env.APP_NAME }}}}" \\
-            --region="${{{{ env.REGION }}}}" \\
-            --project="${{{{ env.PROJECT_ID }}}}" \\
-            --format="value(status.url)"
+      - name: URL
+        run: gcloud run services describe "${{{{ env.APP_NAME }}}}" --region="${{{{ env.REGION }}}}" --project="${{{{ env.PROJECT_ID }}}}" --format="value(status.url)"
 ```
 
-The deploy.sh must also include a CI/CD setup section AFTER the first successful deploy:
-
-```bash
-echo "⚙️  Setting up CI/CD (GitHub Actions)..."
-SA_NAME="anchor-cicd"
-SA_EMAIL="${{SA_NAME}}@${{PROJECT_ID}}.iam.gserviceaccount.com"
-
-# Create service account
-gcloud iam service-accounts create "$SA_NAME" \\
-  --display-name="Anchor CI/CD" \\
-  --project="$PROJECT_ID" 2>/dev/null || true
-
-# Grant only the roles it needs
-for ROLE in roles/run.admin roles/cloudbuild.builds.builder \\
-            roles/artifactregistry.writer roles/secretmanager.secretAccessor \\
-            roles/iam.serviceAccountUser; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
-    --member="serviceAccount:$SA_EMAIL" \\
-    --role="$ROLE" --quiet
-done
-
-# Generate key for GitHub Actions
-gcloud iam service-accounts keys create cicd-key.json \\
-  --iam-account="$SA_EMAIL" \\
-  --project="$PROJECT_ID"
-
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  CI/CD setup complete. Add these to GitHub:"
-echo "  Repo → Settings → Secrets and variables"
-echo ""
-echo "  SECRETS (Settings → Secrets → Actions):"
-echo "  GCP_SA_KEY = contents of cicd-key.json (copy the whole JSON)"
-echo ""
-echo "  VARIABLES (Settings → Variables → Actions):"
-echo "  GCP_PROJECT_ID = $PROJECT_ID"
-echo "  GCP_APP_NAME   = $APP_NAME"
-echo "  GCP_REGION     = $REGION"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "⚠️  Delete cicd-key.json after copying it to GitHub"
-echo "    rm cicd-key.json"
-```
+FILE: {project_path}/deploy.sh
+- A reusable script for future manual redeployments
+- Include all the gcloud commands with PROJECT_ID and APP_NAME filled in (use the values you collected)
+- Include the CI/CD setup section (service account + key generation + GitHub instructions)
+- Include budget alert setup
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FINAL RULES
+PHASE 3 — GCLOUD SETUP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Scan every file BEFORE writing any output file
-- min-instances=0 is non-negotiable — it is what keeps the bill at $0
-- Budget alert must always be in deploy.sh — no exceptions
-- CI/CD workflow must always be generated — every push to main should redeploy
-- The cicd-key.json warning (delete after use) must always be in deploy.sh output
-- If project uses SQLite: add a clear warning in DEPLOY_README.md that data won't persist
-- If project uses Cloud SQL / Redis / Memorystore: do NOT set them up — warn and suggest free alternatives
-- Never modify any existing project file — only write the 5 output files
-- Make deploy.sh runnable out-of-the-box after filling in PROJECT_ID and APP_NAME
+1. Check gcloud is installed:
+   run_command("gcloud version")
+   If it fails: tell the user to install it from https://cloud.google.com/sdk/docs/install and exit.
+
+2. Check if already authenticated:
+   run_command("gcloud auth list --filter=status:ACTIVE --format=value(account)")
+   - If empty → run_command("gcloud auth login", interactive=true)
+   - Re-check auth after login
+
+3. List available projects:
+   run_command("gcloud projects list --format=table(projectId,name)")
+   Then ask_user("Enter your Project ID from the list above (or type 'new' to create one)", secret=false)
+   - If user types 'new':
+     ask_user("Enter a new project ID (lowercase letters, digits, hyphens)", secret=false)
+     run_command("gcloud projects create <id>")
+     run_command("gcloud config set project <id>")
+   - Else: run_command("gcloud config set project <chosen_id>")
+   Store this as PROJECT_ID.
+
+4. Ask for app name:
+   ask_user("What should your app be called? (lowercase letters and hyphens only, e.g. my-app)", secret=false)
+   Store this as APP_NAME.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 4 — PROVISION GOOGLE CLOUD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run these commands using the PROJECT_ID from Phase 3.
+
+1. Enable APIs:
+   run_command("gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com --project=PROJECT_ID")
+
+2. Budget alert ($1 cap — emails user if anything goes wrong):
+   run_command("gcloud billing projects describe PROJECT_ID --format=value(billingAccountName)")
+   Extract billing account ID, then:
+   run_command("gcloud billing budgets create --billing-account=BILLING_ID --display-name=anchor-APP_NAME-guard --budget-amount=1USD --threshold-rule=percent=0.3 --threshold-rule=percent=1.0")
+   If this fails (billing not enabled), print a warning but continue.
+
+3. Create Artifact Registry repo:
+   run_command("gcloud artifacts repositories create APP_NAME --repository-format=docker --location=us-central1 --project=PROJECT_ID")
+
+4. Storage (only if detected in Phase 1):
+   - GCS: run_command("gcloud storage buckets create gs://PROJECT_ID-APP_NAME-storage --location=us-central1 --project=PROJECT_ID")
+   - Firestore: run_command("gcloud services enable firestore.googleapis.com --project=PROJECT_ID") then run_command("gcloud firestore databases create --location=us-central1 --project=PROJECT_ID")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 5 — COLLECT AND STORE SECRETS (safely)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Secret values must NEVER pass through the LLM. Use this exact flow:
+
+1. Write a secrets template file at PROJECT_PATH/.env.anchor using write_file:
+   - Add a comment header explaining what it is
+   - One line per detected secret: KEY=
+   - Example:
+     # Anchor secrets — fill in values then save. This file stays local (never committed or deployed).
+     OPENAI_API_KEY=
+     DATABASE_URL=
+
+2. Tell the user via ask_user:
+   ask_user("Your secrets template is ready at .env.anchor — open it, fill in ALL values, save it, then press Enter")
+
+3. After the user presses Enter, call push_secrets:
+   push_secrets(env_file="PROJECT_PATH/.env.anchor", project_id="PROJECT_ID")
+   This reads the file and pushes each secret directly to Secret Manager.
+   Secret values never touch the LLM. The file stays on disk (it's in .gcloudignore/.gitignore).
+
+4. Use the --set-secrets string returned by push_secrets in the Cloud Run deploy command.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 6 — BUILD AND DEPLOY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMAGE = "us-central1-docker.pkg.dev/PROJECT_ID/APP_NAME/APP_NAME:latest"
+
+1. Build and push:
+   run_command("gcloud builds submit PROJECT_PATH --tag=IMAGE --project=PROJECT_ID")
+   This may take 2-5 minutes. That is normal.
+
+2. Deploy to Cloud Run:
+   run_command(
+     "gcloud run deploy APP_NAME \
+       --image=IMAGE --platform=managed --region=us-central1 \
+       --allow-unauthenticated --min-instances=0 --max-instances=10 \
+       --memory=512Mi --cpu=1 --port=PORT \
+       --set-secrets=SET_SECRETS_STRING \
+       [--set-env-vars=GCS_BUCKET=bucket_name  ← only if GCS was set up] \
+       --project=PROJECT_ID"
+   )
+
+3. Get live URL:
+   run_command("gcloud run services describe APP_NAME --region=us-central1 --project=PROJECT_ID --format=value(status.url)")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 7 — CI/CD SETUP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Create service account:
+   run_command("gcloud iam service-accounts create anchor-cicd --display-name=Anchor CI/CD --project=PROJECT_ID")
+
+2. Grant roles (run each separately):
+   run_command("gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:anchor-cicd@PROJECT_ID.iam.gserviceaccount.com --role=roles/run.admin --quiet")
+   run_command("gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:anchor-cicd@PROJECT_ID.iam.gserviceaccount.com --role=roles/cloudbuild.builds.builder --quiet")
+   run_command("gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:anchor-cicd@PROJECT_ID.iam.gserviceaccount.com --role=roles/artifactregistry.writer --quiet")
+   run_command("gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:anchor-cicd@PROJECT_ID.iam.gserviceaccount.com --role=roles/secretmanager.secretAccessor --quiet")
+   run_command("gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:anchor-cicd@PROJECT_ID.iam.gserviceaccount.com --role=roles/iam.serviceAccountUser --quiet")
+
+3. Generate key:
+   run_command("gcloud iam service-accounts keys create PROJECT_PATH/cicd-key.json --iam-account=anchor-cicd@PROJECT_ID.iam.gserviceaccount.com --project=PROJECT_ID")
+
+4. Print final instructions to the user (this is the only manual step left):
+   Print a clear box like:
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✅  YOUR APP IS LIVE AT: https://...
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   CI/CD: every git push to main will auto-deploy.
+   To activate it, add these to your GitHub repo:
+
+   Repo → Settings → Secrets → Actions:
+     GCP_SA_KEY = <paste the contents of cicd-key.json>
+
+   Repo → Settings → Variables → Actions:
+     GCP_PROJECT_ID = PROJECT_ID
+     GCP_APP_NAME   = APP_NAME
+     GCP_REGION     = us-central1
+
+   Then delete the key file:  rm PROJECT_PATH/cicd-key.json
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ABSOLUTE RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- NEVER skip a phase. Complete all 7 phases.
+- NEVER hardcode a secret value anywhere. Always use Secret Manager.
+- --min-instances=0 is NON-NEGOTIABLE. It is what keeps the bill at $0.
+- --set-secrets for credentials. --set-env-vars only for non-sensitive config.
+- If a command fails, read the error and try to fix it. Do not give up.
+- cicd-key.json must never be committed — warn the user to delete it.
+- The only thing the user provides is their LLM API key. You handle everything else.
 
 Start scanning now.
 """
@@ -590,7 +587,7 @@ def execute_tool(name: str, args: dict) -> str:
 
 def run_agent(project_path: str, model: str) -> None:
     print(f"\n{'━'*60}")
-    print(f"  Anchor  |  scanning: {project_path}")
+    print(f"  Anchor  |  project: {project_path}")
     print(f"  Model   |  {model}")
     print(f"{'━'*60}\n")
 
@@ -598,7 +595,7 @@ def run_agent(project_path: str, model: str) -> None:
     files_written: list[str] = []
 
     for turn in range(1, MAX_TURNS + 1):
-        print(f"[{turn:02d}] Calling {model}...", end=" ", flush=True)
+        print(f"\n[{turn:02d}] Thinking...", end=" ", flush=True)
 
         response = litellm.completion(
             model=model,
@@ -628,14 +625,14 @@ def run_agent(project_path: str, model: str) -> None:
             ]
         messages.append(assistant_entry)
 
-        # No tool calls → agent finished
         if not msg.tool_calls:
-            print("done (no more tools).")
+            # Agent printed final message
+            if msg.content:
+                print(f"\n{msg.content}")
             break
 
-        print(f"{len(msg.tool_calls)} tool call(s)")
+        print(f"{len(msg.tool_calls)} action(s)")
 
-        # Execute each tool call
         for tc in msg.tool_calls:
             name = tc.function.name
             try:
@@ -643,7 +640,7 @@ def run_agent(project_path: str, model: str) -> None:
             except (json.JSONDecodeError, TypeError):
                 args = {}
 
-            # Log what the agent is doing
+            # Log action
             if name == "list_directory":
                 rec = " (recursive)" if args.get("recursive") else ""
                 print(f"     📂  list_directory: {args.get('path', '')}{rec}")
@@ -651,9 +648,16 @@ def run_agent(project_path: str, model: str) -> None:
                 print(f"     📄  read_file: {args.get('path', '')}")
             elif name == "write_file":
                 fpath = args.get("path", "")
+                fname = Path(fpath).name
                 print(f"     ✍️   write_file: {fpath}")
-                if Path(fpath).name in OUTPUT_FILES:
+                if fname in OUTPUT_FILES:
                     files_written.append(fpath)
+            elif name == "run_command":
+                pass  # command is printed inside run_command()
+            elif name == "ask_user":
+                pass  # question is printed inside ask_user()
+            elif name == "push_secrets":
+                print(f"     🔐  push_secrets: {args.get('env_file', '')} → Secret Manager")
 
             result = execute_tool(name, args)
 
@@ -663,25 +667,9 @@ def run_agent(project_path: str, model: str) -> None:
                 "content": result,
             })
     else:
-        print(f"\n⚠️  Reached max turns ({MAX_TURNS}). Output may be incomplete.")
+        print(f"\n⚠️  Reached max turns ({MAX_TURNS}).")
 
-    # ── Summary ──────────────────────────────────────────────────────────────
-    print(f"\n{'━'*60}")
-    if files_written:
-        print(f"✅  Anchor complete! {len(files_written)} file(s) generated:\n")
-        for f in sorted(set(files_written)):
-            print(f"    {f}")
-        print(f"""
-Next steps:
-  1. Open deploy.sh → fill in PROJECT_ID and APP_NAME
-  2. Export your secret values (see DEPLOY_README.md)
-  3. Run: cd {project_path} && ./deploy.sh
-
-Full instructions: {project_path}/DEPLOY_README.md
-""")
-    else:
-        print("⚠️  No output files were written. See agent output above for details.")
-    print("━"*60 + "\n")
+    print(f"\n{'━'*60}\n")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -689,33 +677,31 @@ Full instructions: {project_path}/DEPLOY_README.md
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="anchor",
-        description="Anchor — scan any project and deploy to Google Cloud Run for free",
+        description="Anchor — deploy any project to Google Cloud Run for free. One command.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  python anchor.py --project ./my-fastapi-app
-  python anchor.py --project ~/projects/my-node-app --model gpt-4o
-  ANCHOR_MODEL=gemini/gemini-2.0-flash python anchor.py --project ./app
+  python anchor.py --project ./my-app
+  python anchor.py --project ~/projects/my-api --model gpt-4o
 
-supported models (via LiteLLM):
-  claude-sonnet-4-6         (default, recommended)
-  claude-haiku-4-5          (faster, cheaper)
-  gpt-4o                    (OpenAI — needs OPENAI_API_KEY)
-  gemini/gemini-2.0-flash   (Google — needs GEMINI_API_KEY)
-  any model supported by LiteLLM
+supported models:
+  claude-sonnet-4-6         (default)   needs ANTHROPIC_API_KEY
+  claude-haiku-4-5          (faster)    needs ANTHROPIC_API_KEY
+  gpt-4o                               needs OPENAI_API_KEY
+  gemini/gemini-2.0-flash              needs GEMINI_API_KEY
         """,
     )
     parser.add_argument(
         "--project",
         required=True,
         metavar="PATH",
-        help="Path to the project directory to scan",
+        help="Path to the project to deploy",
     )
     parser.add_argument(
         "--model",
         default=os.getenv("ANCHOR_MODEL", DEFAULT_MODEL),
         metavar="MODEL",
-        help=f"LLM model to use (default: {DEFAULT_MODEL}). Override with ANCHOR_MODEL env var.",
+        help=f"LLM model (default: {DEFAULT_MODEL}). Override with ANCHOR_MODEL env var.",
     )
     args = parser.parse_args()
 
