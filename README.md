@@ -1,10 +1,52 @@
 # Anchor
 
-> One command. Your app is live on Google Cloud. Free.
+> Anchor — infrastructure for one-command deployments to Google Cloud Run.
 
-Anchor is an AI agent that scans any project, figures out the stack, collects your secrets safely, and fully deploys to Google Cloud Run — no manual steps, no config files to fill in.
+Anchor is a backend deployment agent for shipping apps to Cloud Run. It scans your project, understands the stack, generates the required infra files, collects secrets safely, and deploys end-to-end — no manual steps and no config files to fill in.
 
 **The only thing you provide is your LLM API key.**
+
+---
+
+## Problem
+
+Shipping a new service to Cloud Run usually means stitching together Docker, gcloud, secret management, and CI/CD by hand. That process is slow, error-prone, and easy to misconfigure. Anchor provides a structured, automated pipeline that turns any repo into a deployable Cloud Run service with safe secret handling and repeatable CI/CD.
+
+---
+
+## Architecture
+
+```
+CLI → Project Scanner → LLM Planner → Artifact Generator → GCloud APIs → Live URL + CI/CD
+                      (Dockerfile, deploy.sh, .gcloudignore, GitHub Actions)
+```
+
+Client Layer  
+`anchor.py` CLI that triggers a deployment for a local project.
+
+Processing Layer  
+Scans the repository, determines the stack, and plans deployment steps using an LLM.
+
+Artifact Layer  
+Generates `Dockerfile`, `.gcloudignore`, `deploy.sh`, and GitHub Actions workflow.
+
+Cloud Integration  
+Pushes secrets to Secret Manager, builds with Cloud Build, and deploys to Cloud Run.
+
+Output Layer  
+Returns a live URL and sets up CI/CD for future `git push` deployments.
+
+---
+
+## Tech Stack
+
+Python  
+LiteLLM (LLM routing)  
+Google Cloud Run  
+Google Cloud Build  
+Google Secret Manager  
+Docker  
+GitHub Actions
 
 ---
 
