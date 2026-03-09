@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html class="h-full bg-gray-950">
+  <head>
+    <title><%= content_for(:title) || "Anchor" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <link rel="icon" href="/icon.png" type="image/png">
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body class="h-full font-sans antialiased text-gray-100">
+
+    <%# ── Navbar ─────────────────────────────────────────────── %>
+    <nav class="border-b border-gray-800 bg-gray-950">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="flex h-14 items-center justify-between">
+
+          <div class="flex items-center gap-8">
+            <%= link_to root_path, class: "flex items-center gap-2 font-bold text-white tracking-tight" do %>
+              <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+              Anchor
+            <% end %>
+
+            <% if logged_in? %>
+              <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+                <%= link_to "Projects",     projects_path,
+                      class: "hover:text-white transition-colors #{active_nav_class('projects')}" %>
+                <%= link_to "Repositories", repositories_path,
+                      class: "hover:text-white transition-colors #{active_nav_class('repositories')}" %>
+              </div>
+            <% end %>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <% if logged_in? %>
+              <% if current_user.avatar_url.present? %>
+                <img src="<%= current_user.avatar_url %>"
+                     class="w-7 h-7 rounded-full"
+                     alt="<%= current_user.github_login %>">
+              <% end %>
+              <span class="hidden sm:block text-sm text-gray-400"><%= current_user.github_login %></span>
+              <% unless current_user.google_connected? %>
+                <%= button_to "/auth/google_oauth2", data: { turbo: false },
+                      class: "text-xs text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded border border-amber-800 hover:border-amber-600" do %>
+                  Connect Google
+                <% end %>
+              <% end %>
+              <%= button_to logout_path, method: :delete,
+                    class: "text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded border border-gray-800 hover:border-gray-600" do %>
+                Sign out
+              <% end %>
+            <% else %>
+              <%= button_to "/auth/github", data: { turbo: false },
+                    class: "flex items-center gap-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-md transition-colors" do %>
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
+                </svg>
+                Sign in with GitHub
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <%# ── Flash messages ─────────────────────────────────────── %>
+    <div id="notices" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 space-y-2">
+      <% if notice.present? %>
+        <div data-controller="flash"
+             class="flex items-center justify-between rounded-lg bg-emerald-950 border border-emerald-800 px-4 py-3 text-sm text-emerald-300">
+          <span><%= notice %></span>
+          <button data-action="flash#dismiss" class="text-emerald-600 hover:text-emerald-400 ml-4 flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      <% end %>
+      <% if alert.present? %>
+        <div data-controller="flash"
+             class="flex items-center justify-between rounded-lg bg-red-950 border border-red-800 px-4 py-3 text-sm text-red-300">
+          <span><%= alert %></span>
+          <button data-action="flash#dismiss" class="text-red-600 hover:text-red-400 ml-4 flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      <% end %>
+    </div>
+
+    <%# ── Page content ────────────────────────────────────────── %>
+    <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+      <%= yield %>
+    </main>
+
+  </body>
+</html>

@@ -1,0 +1,57 @@
+<%# locals: (deployment:) %>
+<%# Turbo Stream target: broadcast_replace_to "deployment_#{id}", target: "deployment_outcome" %>
+
+<% if deployment.status == "success" && deployment.service_url.present? %>
+  <div class="mb-6 flex items-center gap-3 p-4 rounded-xl bg-emerald-950/50 border border-emerald-800/50"
+       data-controller="clipboard"
+       data-clipboard-content-value="<%= deployment.service_url %>">
+    <div class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse"></div>
+    <div class="flex-1 min-w-0">
+      <p class="text-xs text-emerald-600 font-semibold uppercase tracking-wide mb-0.5">Live</p>
+      <a href="<%= deployment.service_url %>" target="_blank" rel="noopener"
+         class="text-sm text-emerald-400 hover:text-emerald-300 font-mono truncate block">
+        <%= deployment.service_url %>
+      </a>
+    </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <button data-action="clipboard#copy"
+              data-clipboard-target="button"
+              class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded border border-gray-700 hover:border-gray-500">
+        Copy
+      </button>
+      <a href="<%= deployment.service_url %>" target="_blank" rel="noopener"
+         class="text-emerald-600 hover:text-emerald-400 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+
+<% elsif deployment.status == "cancelled" %>
+  <div class="mb-6 flex items-center gap-3 p-4 rounded-xl bg-gray-900/50 border border-gray-700">
+    <svg class="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+    <p class="text-sm text-gray-400">Deployment was cancelled.</p>
+  </div>
+
+<% elsif deployment.status == "failed" %>
+  <div class="mb-6 p-4 rounded-xl bg-red-950/50 border border-red-800/50">
+    <p class="text-xs text-red-500 font-semibold uppercase tracking-wide mb-2">Deployment Failed</p>
+    <pre class="text-sm text-red-300 whitespace-pre-wrap font-mono leading-relaxed"><%= deployment.error_message %></pre>
+  </div>
+
+<% elsif deployment.in_progress? %>
+  <div class="mb-6 flex items-center gap-3 p-4 rounded-xl bg-gray-900/50 border border-gray-800">
+    <svg class="w-4 h-4 text-yellow-500 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+    </svg>
+    <p class="text-sm text-gray-400">
+      <%= deployment.status.capitalize %>…
+      <span class="text-gray-600 text-xs ml-1">stream updates are live</span>
+    </p>
+  </div>
+<% end %>

@@ -1,0 +1,7 @@
+<%# locals: (log:) %>
+<div class="flex gap-2 group hover:bg-white/[0.02] rounded px-1 -mx-1" data-log-line>
+  <span class="text-gray-700 select-none flex-shrink-0 w-16 text-right">
+    <%= log.logged_at.strftime("%H:%M:%S") %>
+  </span>
+  <span class="<%= log_level_class(log.level) %> break-all"><%= log.message %></span>
+</div>

@@ -1,0 +1,27 @@
+<% content_for :title, "Deployments — #{@project.name} — Anchor" %>
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <%= link_to project_path(@project), class: "text-sm text-gray-500 hover:text-gray-300 flex items-center gap-1 mb-2" do %>
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+      <%= @project.name %>
+    <% end %>
+    <h1 class="text-2xl font-bold text-white">Deployments</h1>
+  </div>
+  <%= button_to deploy_project_path(@project), method: :post,
+        class: "inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors" do %>
+    Deploy now
+  <% end %>
+</div>
+
+<div class="rounded-xl border border-gray-800 divide-y divide-gray-800 overflow-hidden">
+  <% if @deployments.empty? %>
+    <p class="px-4 py-10 text-sm text-gray-500 text-center">No deployments yet.</p>
+  <% else %>
+    <% @deployments.each do |deployment| %>
+      <%= render "row", deployment: deployment, show_project: false %>
+    <% end %>
+  <% end %>
+</div>

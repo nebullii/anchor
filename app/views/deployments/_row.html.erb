@@ -1,0 +1,42 @@
+<%# locals: (deployment:, show_project: false) %>
+<%= link_to project_deployment_path(deployment.project, deployment),
+      class: "flex items-center gap-4 px-4 py-3 hover:bg-gray-800/50 transition-colors group" do %>
+
+  <%# Status badge %>
+  <div id="deployment_<%= deployment.id %>_status">
+    <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset w-24 justify-center <%= status_badge_class(deployment.status) %>">
+      <% if status_spinning?(deployment.status) %>
+        <svg class="w-3 h-3 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
+      <% end %>
+      <%= deployment.status %>
+    </span>
+  </div>
+
+  <%# Commit info %>
+  <div class="flex-1 min-w-0">
+    <% if show_project %>
+      <p class="text-xs text-gray-500 truncate"><%= deployment.project.name %></p>
+    <% end %>
+    <p class="text-sm text-gray-200 truncate">
+      <%= deployment.commit_message.presence || "Manual deploy" %>
+    </p>
+    <p class="text-xs text-gray-600 font-mono mt-0.5">
+      <%= deployment.commit_sha&.first(7) %>
+      <% if deployment.branch.present? %>
+        &middot; <%= deployment.branch %>
+      <% end %>
+    </p>
+  </div>
+
+  <%# Duration + time %>
+  <div class="text-right flex-shrink-0">
+    <% if deployment.duration_seconds %>
+      <p class="text-xs text-gray-500"><%= deployment.duration_label %></p>
+    <% end %>
+    <p class="text-xs text-gray-600"><%= time_ago_in_words(deployment.created_at) %> ago</p>
+  </div>
+
+<% end %>

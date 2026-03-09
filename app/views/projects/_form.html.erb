@@ -1,0 +1,75 @@
+<%# locals: (project:, repositories:) %>
+<%= form_with model: project, class: "space-y-5",
+      data: { controller: "repo-picker" } do |f| %>
+  <% if project.errors.any? %>
+    <div class="rounded-md bg-red-950 border border-red-800 px-4 py-3 text-sm text-red-300 space-y-1">
+      <% project.errors.full_messages.each do |msg| %>
+        <p><%= msg %></p>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# Repository — pick this first so name/branch can autofill %>
+  <div>
+    <%= f.label :repository_id, "GitHub Repository", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
+    <% if repositories.empty? %>
+      <p class="text-sm text-gray-500">
+        No repositories found.
+        <%= button_to "Sync from GitHub", sync_repositories_path,
+              data: { turbo: false },
+              class: "text-indigo-400 hover:text-indigo-300 underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-sm" %>
+        first.
+      </p>
+    <% else %>
+      <%= f.select :repository_id,
+            repositories.map { |r|
+              [r.full_name, r.id, {
+                data: { name: r.name, branch: r.default_branch }
+              }]
+            },
+            { prompt: "Select a repository…" },
+            class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500",
+            data: { repo_picker_target: "select", action: "change->repo-picker#fill" } %>
+    <% end %>
+  </div>
+
+  <%# Project name — autofilled from repo %>
+  <div>
+    <%= f.label :name, "Project Name", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
+    <%= f.text_field :name, placeholder: "my-app",
+          class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-gray-600",
+          data: { repo_picker_target: "name" } %>
+  </div>
+
+  <%# Production branch — autofilled from repo default %>
+  <div>
+    <%= f.label :production_branch, "Production Branch", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
+    <%= f.text_field :production_branch, placeholder: "main",
+          class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600",
+          data: { repo_picker_target: "branch" } %>
+  </div>
+
+  <%# GCP Project ID %>
+  <div>
+    <%= f.label :gcp_project_id, "GCP Project ID", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
+    <%= f.text_field :gcp_project_id,
+          value: project.gcp_project_id.presence || current_user.default_gcp_project_id,
+          placeholder: "my-gcp-project-123",
+          class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600" %>
+    <p class="mt-1 text-xs text-gray-600">Found in your Google Cloud Console.</p>
+  </div>
+
+  <%# Region %>
+  <div>
+    <%= f.label :gcp_region, "Region", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
+    <%= f.select :gcp_region,
+          Project::REGIONS.map { |r| [r, r] },
+          { selected: project.gcp_region.presence || current_user.default_gcp_region },
+          class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" %>
+  </div>
+
+  <div class="pt-2">
+    <%= f.submit project.new_record? ? "Create Project" : "Save Changes",
+          class: "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors cursor-pointer" %>
+  </div>
+<% end %>

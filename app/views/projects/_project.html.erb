@@ -1,0 +1,50 @@
+<%# locals: (project:) %>
+<div class="rounded-xl border border-gray-800 bg-gray-900 p-5 hover:border-gray-700 transition-colors">
+  <div class="flex items-start justify-between mb-3">
+    <div class="flex-1 min-w-0">
+      <%= link_to project_path(project), class: "block" do %>
+        <h3 class="font-semibold text-white truncate hover:text-indigo-400 transition-colors">
+          <%= project.name %>
+        </h3>
+      <% end %>
+      <p class="text-xs text-gray-500 mt-0.5 truncate"><%= project.repository&.full_name %></p>
+    </div>
+    <span class="ml-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset flex-shrink-0 <%= status_badge_class(project.status) %>">
+      <% if status_spinning?(project.status) %>
+        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
+      <% end %>
+      <%= project.status %>
+    </span>
+  </div>
+
+  <% if project.framework.present? %>
+    <p class="text-xs text-gray-500 mb-3">
+      <%= raw framework_icon(project.framework) %> <%= project.framework %> &middot; <%= project.gcp_region %>
+    </p>
+  <% end %>
+
+  <% if project.latest_url.present? %>
+    <a href="<%= project.latest_url %>" target="_blank" rel="noopener"
+       class="block text-xs text-indigo-400 hover:text-indigo-300 truncate mb-3">
+      <%= project.latest_url %>
+    </a>
+  <% end %>
+
+  <div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
+    <span class="text-xs text-gray-600">
+      <% dep = project.latest_deployment %>
+      <% if dep %>
+        <%= time_ago_in_words(dep.created_at) %> ago
+      <% else %>
+        Never deployed
+      <% end %>
+    </span>
+    <%= button_to deploy_project_path(project), method: :post,
+          class: "text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1 rounded transition-colors" do %>
+      Deploy
+    <% end %>
+  </div>
+</div>

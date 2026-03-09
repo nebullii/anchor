@@ -1,0 +1,24 @@
+<% content_for :title, "Projects — Anchor" %>
+
+<div class="flex items-center justify-between mb-8">
+  <h1 class="text-2xl font-bold text-white">Projects</h1>
+  <%= link_to new_project_path,
+        class: "inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors" do %>
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    New Project
+  <% end %>
+</div>
+
+<% if @projects.empty? %>
+  <div class="rounded-xl border border-dashed border-gray-800 p-16 text-center">
+    <p class="text-gray-500 text-sm mb-4">No projects yet.</p>
+    <%= link_to "Create your first project", new_project_path,
+          class: "text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-2" %>
+  </div>
+<% else %>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <%= render @projects %>
+  </div>
+<% end %>

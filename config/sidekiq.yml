@@ -1,0 +1,4 @@
+:concurrency: 5
+:queues:
+  - [deployments, 3]
+  - [default, 1]
