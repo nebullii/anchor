@@ -21,27 +21,27 @@ module Analysis
     # Well-known vars: we annotate these with source/required even if not found by scan,
     # as long as a related dependency is present (handled by DatabaseDetector / caller).
     KNOWN_VARS = {
-      "DATABASE_URL"           => { source: "database",        required: true  },
-      "REDIS_URL"              => { source: "redis",           required: false },
-      "SECRET_KEY_BASE"        => { source: "rails",           required: true  },
-      "RAILS_MASTER_KEY"       => { source: "rails",           required: true  },
-      "OPENAI_API_KEY"         => { source: "openai",          required: true  },
-      "ANTHROPIC_API_KEY"      => { source: "anthropic",       required: true  },
-      "STRIPE_SECRET_KEY"      => { source: "stripe",          required: true  },
-      "STRIPE_PUBLISHABLE_KEY" => { source: "stripe",          required: false },
-      "SENDGRID_API_KEY"       => { source: "sendgrid",        required: true  },
-      "MAILGUN_API_KEY"        => { source: "mailgun",         required: true  },
-      "AWS_ACCESS_KEY_ID"      => { source: "aws",             required: true  },
-      "AWS_SECRET_ACCESS_KEY"  => { source: "aws",             required: true  },
-      "GOOGLE_API_KEY"         => { source: "google",          required: true  },
-      "GOOGLE_CLIENT_ID"       => { source: "google-oauth",    required: true  },
-      "GOOGLE_CLIENT_SECRET"   => { source: "google-oauth",    required: true  },
-      "GITHUB_TOKEN"           => { source: "github",          required: true  },
-      "TWILIO_ACCOUNT_SID"     => { source: "twilio",          required: true  },
-      "TWILIO_AUTH_TOKEN"      => { source: "twilio",          required: true  },
-      "SENTRY_DSN"             => { source: "sentry",          required: false },
-      "DJANGO_SECRET_KEY"      => { source: "django",          required: true  },
-      "DJANGO_SETTINGS_MODULE" => { source: "django",          required: false },
+      "DATABASE_URL"           => { source: "database",     required: true,  url: nil,                                                    hint: "Connection string for your database (e.g. postgresql://user:pass@host/db)" },
+      "REDIS_URL"              => { source: "redis",        required: false, url: nil,                                                    hint: "Redis connection string (e.g. redis://localhost:6379/0)" },
+      "SECRET_KEY_BASE"        => { source: "rails",        required: true,  url: nil,                                                    hint: "Generate with: rails secret" },
+      "RAILS_MASTER_KEY"       => { source: "rails",        required: true,  url: nil,                                                    hint: "Found in config/master.key — do not commit this file" },
+      "OPENAI_API_KEY"         => { source: "openai",       required: true,  url: "https://platform.openai.com/api-keys",                 hint: "Create at platform.openai.com/api-keys" },
+      "ANTHROPIC_API_KEY"      => { source: "anthropic",    required: true,  url: "https://console.anthropic.com/settings/keys",          hint: "Create at console.anthropic.com/settings/keys" },
+      "STRIPE_SECRET_KEY"      => { source: "stripe",       required: true,  url: "https://dashboard.stripe.com/apikeys",                 hint: "Get from Stripe Dashboard → Developers → API keys" },
+      "STRIPE_PUBLISHABLE_KEY" => { source: "stripe",       required: false, url: "https://dashboard.stripe.com/apikeys",                 hint: "Get from Stripe Dashboard → Developers → API keys" },
+      "SENDGRID_API_KEY"       => { source: "sendgrid",     required: true,  url: "https://app.sendgrid.com/settings/api_keys",           hint: "Create at SendGrid → Settings → API Keys" },
+      "MAILGUN_API_KEY"        => { source: "mailgun",      required: true,  url: "https://app.mailgun.com/app/account/security/api_keys", hint: "Get from Mailgun → Account → Security → API Keys" },
+      "AWS_ACCESS_KEY_ID"      => { source: "aws",          required: true,  url: "https://console.aws.amazon.com/iam/home#/security_credentials", hint: "Create in AWS IAM → Security Credentials" },
+      "AWS_SECRET_ACCESS_KEY"  => { source: "aws",          required: true,  url: "https://console.aws.amazon.com/iam/home#/security_credentials", hint: "Created alongside AWS_ACCESS_KEY_ID" },
+      "GOOGLE_API_KEY"         => { source: "google",       required: true,  url: "https://console.cloud.google.com/apis/credentials",    hint: "Create at GCP Console → APIs & Services → Credentials" },
+      "GOOGLE_CLIENT_ID"       => { source: "google-oauth", required: true,  url: "https://console.cloud.google.com/apis/credentials",    hint: "OAuth 2.0 Client ID from GCP Console → Credentials" },
+      "GOOGLE_CLIENT_SECRET"   => { source: "google-oauth", required: true,  url: "https://console.cloud.google.com/apis/credentials",    hint: "OAuth 2.0 Client Secret from GCP Console → Credentials" },
+      "GITHUB_TOKEN"           => { source: "github",       required: true,  url: "https://github.com/settings/tokens",                   hint: "Create a Personal Access Token at GitHub → Settings → Developer settings" },
+      "TWILIO_ACCOUNT_SID"     => { source: "twilio",       required: true,  url: "https://console.twilio.com/",                          hint: "Found on your Twilio Console dashboard" },
+      "TWILIO_AUTH_TOKEN"      => { source: "twilio",       required: true,  url: "https://console.twilio.com/",                          hint: "Found on your Twilio Console dashboard" },
+      "SENTRY_DSN"             => { source: "sentry",       required: false, url: "https://sentry.io/settings/",                          hint: "Get from Sentry → Project Settings → Client Keys (DSN)" },
+      "DJANGO_SECRET_KEY"      => { source: "django",       required: true,  url: nil,                                                    hint: "Generate with: python -c \"from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())\"" },
+      "DJANGO_SETTINGS_MODULE" => { source: "django",       required: false, url: nil,                                                    hint: "Python dotted path to your settings file (e.g. myapp.settings.production)" },
     }.freeze
 
     SKIP_KEYS = %w[PORT HOST RACK_ENV RAILS_ENV NODE_ENV PYTHONUNBUFFERED].freeze
@@ -105,7 +105,9 @@ module Analysis
         {
           "key"      => key,
           "source"   => known[:source] || "source code",
-          "required" => known.fetch(:required, false)
+          "required" => known.fetch(:required, false),
+          "url"      => known[:url],
+          "hint"     => known[:hint]
         }
       end.sort_by { |v| [v["required"] ? 0 : 1, v["key"]] }
     end
