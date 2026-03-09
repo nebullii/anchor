@@ -5,6 +5,7 @@ FactoryBot.define do
     branch       { "main" }
     triggered_by { "manual" }
 
+    trait :analyzing  do status { "analyzing" }  end
     trait :cloning    do status { "cloning" }    end
     trait :building   do status { "building" }   end
     trait :deploying  do status { "deploying" }  end

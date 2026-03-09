@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   resources :projects do
     member do
       post :deploy
+      post :analyze
     end
     resources :deployments, only: %i[index show create] do
       member do

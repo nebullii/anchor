@@ -1,5 +1,5 @@
 class ProjectsController < ApplicationController
-  before_action :set_project, only: %i[show edit update destroy deploy]
+  before_action :set_project, only: %i[show edit update destroy deploy analyze]
 
   def index
     @projects = current_user.projects.includes(:repository, :deployments).ordered
@@ -18,7 +18,8 @@ class ProjectsController < ApplicationController
   def create
     @project = current_user.projects.new(project_params)
     if @project.save
-      redirect_to @project, notice: "Project created."
+      RepositoryAnalysisJob.perform_later(@project.id)
+      redirect_to @project, notice: "Project created. Analyzing repository…"
     else
       @repositories = current_user.repositories.ordered
       render :new, status: :unprocessable_entity
@@ -43,7 +44,41 @@ class ProjectsController < ApplicationController
     redirect_to projects_path, notice: "Project deleted."
   end
 
+  def analyze
+    @project.update_columns(analysis_status: "analyzing")
+    RepositoryAnalysisJob.perform_later(@project.id)
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          "analysis_panel",
+          partial: "projects/analysis_panel",
+          locals:  { project: @project }
+        )
+      end
+      format.html { redirect_to @project, notice: "Analysis started." }
+    end
+  end
+
   def deploy
+    missing = @project.missing_required_secrets
+    if missing.any?
+      respond_to do |format|
+        format.turbo_stream do
+          render turbo_stream: turbo_stream.replace(
+            "notices",
+            partial: "shared/notice",
+            locals:  { message: "Missing required secrets: #{missing.join(', ')}. Add them before deploying.", type: "error" }
+          )
+        end
+        format.html do
+          redirect_to project_secrets_path(@project),
+                      alert: "Missing required secrets: #{missing.join(', ')}. Add them before deploying."
+        end
+      end
+      return
+    end
+
     @deployment = @project.deployments.create!(
       status:       "pending",
       triggered_by: "manual",

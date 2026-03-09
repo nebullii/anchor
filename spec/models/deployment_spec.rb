@@ -27,7 +27,7 @@ RSpec.describe Deployment, type: :model do
       success = create(:deployment, :success, project: project)
       failed  = create(:deployment, :failed, project: project)
 
-      expect(Deployment.terminal).to contain_exactly(success, failed)
+      expect(project.deployments.terminal).to contain_exactly(success, failed)
     end
   end
 

@@ -2,8 +2,9 @@ class Project < ApplicationRecord
   # ------------------------------------------------------------------ #
   # Constants                                                            #
   # ------------------------------------------------------------------ #
-  STATUSES   = %w[inactive active building error].freeze
-  FRAMEWORKS = %w[rails node python static docker unknown].freeze
+  STATUSES          = %w[inactive active building error].freeze
+  FRAMEWORKS        = %w[rails node python fastapi flask django nextjs static docker unknown].freeze
+  ANALYSIS_STATUSES = %w[pending analyzing complete failed].freeze
   REGIONS    = %w[
     us-central1 us-east1 us-west1
     europe-west1 europe-west2 europe-west3
@@ -28,8 +29,9 @@ class Project < ApplicationRecord
                                        message: "only lowercase letters, numbers, and hyphens" }
   validates :gcp_project_id, presence: true
   validates :gcp_region,     presence: true, inclusion: { in: REGIONS }
-  validates :status,         inclusion: { in: STATUSES }
-  validates :framework,      inclusion: { in: FRAMEWORKS }, allow_nil: true
+  validates :status,          inclusion: { in: STATUSES }
+  validates :analysis_status, inclusion: { in: ANALYSIS_STATUSES }
+  validates :framework,       inclusion: { in: FRAMEWORKS }, allow_nil: true
   validates :name,           uniqueness: { scope: :user_id, message: "already exists in your account" }
 
   # ------------------------------------------------------------------ #
@@ -68,6 +70,25 @@ class Project < ApplicationRecord
 
   def framework_detected?
     framework.present?
+  end
+
+  def analysis_complete?
+    analysis_status == "complete" && analysis_result.present?
+  end
+
+  def analysis_fresh?
+    analysis_complete? && analyzed_at.present? && analyzed_at > 2.hours.ago
+  end
+
+  def detected_env_vars
+    return [] unless analysis_complete?
+    analysis_result["detected_env_vars"] || []
+  end
+
+  def missing_required_secrets
+    required_keys = detected_env_vars.select { |v| v["required"] }.map { |v| v["key"] }
+    existing_keys = secrets.pluck(:key)
+    required_keys - existing_keys
   end
 
   private

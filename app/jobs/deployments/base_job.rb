@@ -40,6 +40,7 @@ module Deployments
       deployment.update!(error_message: message)
       deployment.append_log(message, level: "error")
       deployment.transition_to!("failed")
+      ExplainErrorJob.perform_later(deployment.id)
     end
 
     # Returns env vars to inject into every gcloud command so it authenticates

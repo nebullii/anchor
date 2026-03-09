@@ -1,5 +1,6 @@
 <% content_for :title, "#{@project.name} — Anchor" %>
 <%= turbo_stream_from "project_#{@project.id}_deployments" %>
+<%= turbo_stream_from "project_#{@project.id}_analysis" %>
 
 <%# ── Header ──────────────────────────────────────────────────── %>
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -106,25 +107,7 @@
   <%# ── Sidebar ─────────────────────────────────────────────────── %>
   <div class="space-y-4">
 
-    <% if @project.framework.present? %>
-      <div class="rounded-xl border border-gray-800 p-4">
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Stack</h3>
-        <div class="space-y-2 text-sm">
-          <div class="flex justify-between">
-            <span class="text-gray-500">Framework</span>
-            <span class="text-gray-200"><%= raw framework_icon(@project.framework) %> <%= @project.framework %></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Runtime</span>
-            <span class="text-gray-200 font-mono text-xs"><%= @project.runtime %></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-gray-500">Port</span>
-            <span class="text-gray-200 font-mono"><%= @project.port %></span>
-          </div>
-        </div>
-      </div>
-    <% end %>
+    <%= render "projects/analysis_panel", project: @project %>
 
     <div class="rounded-xl border border-gray-800 p-4">
       <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Google Cloud</h3>

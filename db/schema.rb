@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_08_223535) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_09_200323) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -29,6 +29,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_223535) do
   end
 
   create_table "deployments", force: :cascade do |t|
+    t.text "ai_error_explanation"
     t.string "branch"
     t.string "cloud_build_id"
     t.string "cloud_build_log_url"
@@ -55,6 +56,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_223535) do
   end
 
   create_table "projects", force: :cascade do |t|
+    t.jsonb "analysis_result"
+    t.string "analysis_status", default: "pending", null: false
+    t.datetime "analyzed_at"
     t.boolean "auto_deploy", default: false, null: false
     t.datetime "created_at", null: false
     t.string "framework"
@@ -71,6 +75,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_08_223535) do
     t.string "status", default: "inactive", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["analysis_status"], name: "index_projects_on_analysis_status"
     t.index ["gcp_project_id"], name: "index_projects_on_gcp_project_id"
     t.index ["repository_id"], name: "index_projects_on_repository_id"
     t.index ["service_name"], name: "index_projects_on_service_name"

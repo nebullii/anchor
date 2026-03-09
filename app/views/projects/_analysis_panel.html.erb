@@ -1,0 +1,167 @@
+<%# Rendered inside a turbo-stream broadcast target: "analysis_panel"
+    project.analysis_status: pending | analyzing | complete | failed %>
+
+<div id="analysis_panel" class="space-y-4">
+  <% if project.analysis_status == "analyzing" %>
+
+    <div class="rounded-xl border border-indigo-800/50 bg-indigo-950/30 p-4">
+      <div class="flex items-center gap-3">
+        <svg class="w-4 h-4 text-indigo-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        <p class="text-sm text-indigo-300">Analyzing repository…</p>
+      </div>
+    </div>
+
+  <% elsif project.analysis_complete? %>
+    <% result = project.analysis_result %>
+
+    <%# ── App Description (AI-enriched) ──────────────────────────── %>
+    <% if result["app_description"].present? %>
+      <p class="text-sm text-gray-400 italic px-1"><%= result["app_description"] %></p>
+    <% end %>
+
+    <%# ── Detected Stack ──────────────────────────────────────────── %>
+    <% ai_confidence = result["ai_confidence"] || result["confidence"] %>
+    <div class="rounded-xl border border-gray-800 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Detected Stack</h3>
+        <% if ai_confidence == "low" %>
+          <span class="text-xs text-amber-400">low confidence</span>
+        <% elsif ai_confidence == "high" %>
+          <span class="text-xs text-emerald-600">high confidence</span>
+        <% end %>
+      </div>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <span class="text-gray-500">Framework</span>
+          <span class="text-gray-200"><%= raw framework_icon(result["framework"]) %> <%= result["framework"] %></span>
+        </div>
+        <% if result["framework_notes"].present? %>
+          <p class="text-xs text-gray-500 italic"><%= result["framework_notes"] %></p>
+        <% end %>
+        <div class="flex justify-between">
+          <span class="text-gray-500">Runtime</span>
+          <span class="text-gray-200 font-mono text-xs"><%= result["runtime"] %></span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-500">Port</span>
+          <span class="text-gray-200 font-mono"><%= result["port"] %></span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-500">Dockerfile</span>
+          <% if result["has_dockerfile"] %>
+            <span class="text-emerald-400 text-xs">Found ✓</span>
+          <% else %>
+            <span class="text-gray-400 text-xs">Will be generated</span>
+          <% end %>
+        </div>
+      </div>
+    </div>
+
+    <%# ── Database ────────────────────────────────────────────────── %>
+    <% if result["detected_database"].present? %>
+      <div class="rounded-xl border border-gray-800 p-4">
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Database Detected</h3>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-gray-200 capitalize"><%= result.dig("detected_database", "adapter") %></span>
+          <% db_var = result.dig("detected_database", "var") %>
+          <% if db_var.present? && !project.secrets.exists?(key: db_var) %>
+            <%= link_to "+ Add #{db_var}",
+                  project_secrets_path(project, prefill_key: db_var),
+                  class: "text-xs text-indigo-400 hover:text-indigo-300" %>
+          <% elsif db_var.present? %>
+            <span class="text-xs text-emerald-400">✓ <%= db_var %> set</span>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <%# ── Required Environment Variables ─────────────────────────── %>
+    <% env_vars = result["detected_env_vars"] || [] %>
+    <% if env_vars.any? %>
+      <div class="rounded-xl border border-gray-800 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Environment Variables</h3>
+          <% missing = project.missing_required_secrets %>
+          <% if missing.any? %>
+            <span class="text-xs text-amber-400"><%= missing.size %> required missing</span>
+          <% else %>
+            <span class="text-xs text-emerald-400">All required set ✓</span>
+          <% end %>
+        </div>
+
+        <div class="space-y-2">
+          <% env_vars.each do |var| %>
+            <% key = var["key"] %>
+            <% already_set = project.secrets.exists?(key: key) %>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <code class="text-xs text-gray-300 font-mono truncate"><%= key %></code>
+                <% if var["required"] %>
+                  <span class="text-xs text-amber-500 flex-shrink-0">required</span>
+                <% end %>
+              </div>
+              <% if already_set %>
+                <span class="text-xs text-emerald-400 flex-shrink-0">✓ set</span>
+              <% else %>
+                <%= link_to "+ Add",
+                      project_secrets_path(project, prefill_key: key),
+                      class: "text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0" %>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <%# ── Warnings ────────────────────────────────────────────────── %>
+    <% warnings = result["warnings"] || [] %>
+    <% if warnings.any? %>
+      <div class="rounded-xl border border-amber-800/40 bg-amber-950/20 p-4">
+        <h3 class="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-2">Warnings</h3>
+        <ul class="space-y-1">
+          <% warnings.each do |w| %>
+            <li class="text-xs text-amber-300">⚠ <%= w %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <%# ── Footer ─────────────────────────────────────────────────── %>
+    <div class="text-xs text-gray-600 flex items-center justify-between">
+      <span>Analyzed <%= time_ago_in_words(project.analyzed_at) %> ago</span>
+      <%= button_to "Re-analyze",
+            analyze_project_path(project),
+            method: :post,
+            class: "text-xs text-gray-500 hover:text-gray-300 transition-colors" %>
+    </div>
+
+  <% elsif project.analysis_status == "failed" %>
+
+    <div class="rounded-xl border border-red-800/50 bg-red-950/20 p-4">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-red-300">Repository analysis failed.</p>
+        <%= button_to "Try again",
+              analyze_project_path(project),
+              method: :post,
+              class: "text-xs text-red-400 hover:text-red-300 border border-red-800 px-2 py-1 rounded transition-colors flex-shrink-0" %>
+      </div>
+    </div>
+
+  <% else %>
+    <%# pending state — shown briefly before the job starts %>
+
+    <div class="rounded-xl border border-gray-800 p-4">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-gray-500">Repository not yet analyzed.</p>
+        <%= button_to "Analyze now",
+              analyze_project_path(project),
+              method: :post,
+              class: "text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800 px-2 py-1 rounded transition-colors flex-shrink-0" %>
+      </div>
+    </div>
+
+  <% end %>
+</div>

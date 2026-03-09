@@ -41,6 +41,24 @@
   <div class="mb-6 p-4 rounded-xl bg-red-950/50 border border-red-800/50">
     <p class="text-xs text-red-500 font-semibold uppercase tracking-wide mb-2">Deployment Failed</p>
     <pre class="text-sm text-red-300 whitespace-pre-wrap font-mono leading-relaxed"><%= deployment.error_message %></pre>
+
+    <% if deployment.ai_error_explanation.present? %>
+      <div class="mt-4 pt-4 border-t border-red-800/40">
+        <p class="text-xs text-red-400 font-semibold uppercase tracking-wide mb-2">
+          <svg class="w-3.5 h-3.5 inline-block mr-1 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          What went wrong
+        </p>
+        <p class="text-sm text-red-200/80 leading-relaxed"><%= deployment.ai_error_explanation %></p>
+      </div>
+    <% elsif deployment.failed? %>
+      <%# Placeholder while ExplainErrorJob is still running %>
+      <div class="mt-4 pt-4 border-t border-red-800/40">
+        <p class="text-xs text-red-600 animate-pulse">Analyzing failure…</p>
+      </div>
+    <% end %>
   </div>
 
 <% elsif deployment.in_progress? %>

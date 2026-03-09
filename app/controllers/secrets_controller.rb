@@ -3,7 +3,7 @@ class SecretsController < ApplicationController
 
   def index
     @secrets = @project.secrets.ordered
-    @secret  = @project.secrets.new
+    @secret  = @project.secrets.new(key: params[:prefill_key])
   end
 
   def create

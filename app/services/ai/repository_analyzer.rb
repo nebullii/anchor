@@ -1,0 +1,140 @@
+module Ai
+  # Enriches deterministic analysis results with AI-powered insights.
+  #
+  # Calls the Anthropic Messages API (claude-haiku-4-5 for speed/cost) with
+  # a structured prompt that includes the deterministic analysis and asks the
+  # model to:
+  #   - Confirm / correct the detected framework and runtime
+  #   - Identify additional environment variables that should be set
+  #   - Flag deployment warnings (e.g. missing health check, large image risk)
+  #   - Suggest a concise description of what the app does
+  #
+  # Degrades gracefully when ANTHROPIC_API_KEY is not set — the original
+  # analysis result is returned unchanged.
+  #
+  class RepositoryAnalyzer
+    API_URL = "https://api.anthropic.com/v1/messages".freeze
+    MODEL   = "claude-haiku-4-5-20251001".freeze
+    TIMEOUT = 30
+
+    def initialize(analysis_result, file_tree: [], readme: nil)
+      @analysis_result = analysis_result
+      @file_tree       = file_tree
+      @readme          = readme
+    end
+
+    # Returns an enriched copy of analysis_result (Hash) or the original if
+    # the API is unavailable / not configured.
+    def call
+      return @analysis_result unless api_key.present?
+
+      response = request_enrichment
+      return @analysis_result unless response
+
+      merge_enrichment(@analysis_result, response)
+    rescue => e
+      Rails.logger.warn("[Ai::RepositoryAnalyzer] Enrichment skipped: #{e.message}")
+      @analysis_result
+    end
+
+    private
+
+    def api_key
+      ENV["ANTHROPIC_API_KEY"]
+    end
+
+    def request_enrichment
+      conn = Faraday.new(url: API_URL) do |f|
+        f.options.timeout      = TIMEOUT
+        f.options.open_timeout = 10
+        f.request  :json
+        f.response :json
+      end
+
+      response = conn.post do |req|
+        req.headers["x-api-key"]         = api_key
+        req.headers["anthropic-version"]  = "2023-06-01"
+        req.body = {
+          model:      MODEL,
+          max_tokens: 1024,
+          system:     system_prompt,
+          messages:   [{ role: "user", content: user_message }]
+        }
+      end
+
+      return nil unless response.success?
+
+      body  = response.body
+      text  = body.dig("content", 0, "text").to_s
+      parse_json_block(text)
+    end
+
+    def system_prompt
+      <<~PROMPT
+        You are an expert DevOps engineer helping analyze application repositories for cloud deployment.
+        You will receive a deterministic analysis of a repository and must return enriched insights in JSON.
+        Be concise. Return ONLY a JSON object — no prose, no markdown, no code fences.
+      PROMPT
+    end
+
+    def user_message
+      parts = []
+      parts << "## Deterministic Analysis\n```json\n#{JSON.pretty_generate(@analysis_result)}\n```"
+
+      if @file_tree.any?
+        parts << "## File Tree (top 60 paths)\n#{@file_tree.first(60).join("\n")}"
+      end
+
+      if @readme.present?
+        parts << "## README (first 2000 chars)\n#{@readme.to_s.first(2_000)}"
+      end
+
+      parts << <<~PROMPT
+        ## Task
+        Return a JSON object with these keys (all optional — omit keys you have no new info for):
+        - "app_description": one-sentence description of what this app does
+        - "additional_env_vars": array of {"key","required","source","description"} objects for env vars the deterministic scan missed
+        - "warnings": array of additional deployment warning strings
+        - "confidence": "high" | "medium" | "low" — your confidence in the framework detection
+        - "framework_notes": brief string if you'd correct or clarify the detected framework
+      PROMPT
+
+      parts.join("\n\n")
+    end
+
+    def parse_json_block(text)
+      JSON.parse(text)
+    rescue JSON::ParserError
+      # Try extracting a JSON object if the model wrapped it in prose
+      match = text.match(/\{[\s\S]*\}/)
+      return nil unless match
+      JSON.parse(match[0])
+    rescue
+      nil
+    end
+
+    def merge_enrichment(base, enrichment)
+      result = base.deep_dup
+
+      result["app_description"]  = enrichment["app_description"]  if enrichment["app_description"].present?
+      result["ai_confidence"]    = enrichment["confidence"]        if enrichment["confidence"].present?
+      result["framework_notes"]  = enrichment["framework_notes"]   if enrichment["framework_notes"].present?
+
+      if enrichment["warnings"].is_a?(Array) && enrichment["warnings"].any?
+        result["warnings"] = ((result["warnings"] || []) + enrichment["warnings"]).uniq
+      end
+
+      if enrichment["additional_env_vars"].is_a?(Array) && enrichment["additional_env_vars"].any?
+        existing_keys = (
+          (result["env_vars"] || []) + (result["detected_env_vars"] || [])
+        ).map { |v| v["key"] }.to_set
+        new_vars = enrichment["additional_env_vars"].select do |v|
+          v["key"].present? && !existing_keys.include?(v["key"])
+        end
+        result["env_vars"] = (result["env_vars"] || []) + new_vars
+      end
+
+      result
+    end
+  end
+end

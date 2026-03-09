@@ -21,11 +21,15 @@ class DockerfileGenerator
 
   def template_for(framework)
     case framework
-    when "rails"  then rails_template
-    when "node"   then node_template
-    when "python" then python_template
-    when "static" then static_template
-    else               nil   # "docker" framework already has a Dockerfile
+    when "rails"   then rails_template
+    when "node"    then node_template
+    when "nextjs"  then nextjs_template
+    when "fastapi" then fastapi_template
+    when "flask"   then flask_template
+    when "django"  then django_template
+    when "python"  then python_template
+    when "static"  then static_template
+    else                nil   # "docker" framework already has a Dockerfile
     end
   end
 
@@ -145,6 +149,111 @@ class DockerfileGenerator
       EXPOSE #{port}
 
       CMD #{start_cmd}
+    DOCKERFILE
+  end
+
+  def nextjs_template
+    node_version = @detection.metadata&.dig("node_version") || "20"
+    build_script = @detection.metadata&.dig("build_script")
+    has_lock     = @detection.metadata&.dig("has_lock_file")
+    port         = @detection.port
+
+    install_cmd = has_lock ? "npm ci" : "npm install"
+
+    <<~DOCKERFILE
+      FROM node:#{node_version}-alpine AS deps
+      WORKDIR /app
+      COPY package*.json ./
+      RUN #{install_cmd}
+
+      FROM node:#{node_version}-alpine AS builder
+      WORKDIR /app
+      COPY --from=deps /app/node_modules ./node_modules
+      COPY . .
+      RUN npm run build
+
+      FROM node:#{node_version}-alpine AS runner
+      WORKDIR /app
+      ENV NODE_ENV=production
+      COPY --from=builder /app/public ./public
+      COPY --from=builder /app/.next/standalone ./
+      COPY --from=builder /app/.next/static ./.next/static
+
+      EXPOSE #{port}
+      CMD ["node", "server.js"]
+    DOCKERFILE
+  end
+
+  def fastapi_template
+    entry    = @detection.metadata&.dig("entry_point") || "main.py"
+    app_module = File.basename(entry, ".py")
+    port     = @detection.port
+
+    <<~DOCKERFILE
+      FROM python:3.11-slim
+
+      WORKDIR /app
+
+      COPY requirements.txt .
+      RUN pip install --no-cache-dir -r requirements.txt
+
+      COPY . .
+
+      ENV PYTHONUNBUFFERED=1
+      EXPOSE #{port}
+
+      CMD ["uvicorn", "#{app_module}:app", "--host", "0.0.0.0", "--port", "#{port}"]
+    DOCKERFILE
+  end
+
+  def flask_template
+    entry_point = @detection.metadata&.dig("entry_point") || "app.py"
+    has_procfile = @detection.metadata&.dig("has_procfile")
+    port        = @detection.port
+
+    start_cmd = if has_procfile
+      '["sh", "-c", "$(grep -m1 web Procfile | cut -d: -f2-)"]'
+    else
+      %(["gunicorn", "--bind", "0.0.0.0:#{port}", "--workers", "2", "#{File.basename(entry_point, '.py')}:app"])
+    end
+
+    <<~DOCKERFILE
+      FROM python:3.11-slim
+
+      WORKDIR /app
+
+      COPY requirements.txt .
+      RUN pip install --no-cache-dir -r requirements.txt gunicorn
+
+      COPY . .
+
+      ENV PYTHONUNBUFFERED=1
+      EXPOSE #{port}
+
+      CMD #{start_cmd}
+    DOCKERFILE
+  end
+
+  def django_template
+    wsgi   = @detection.metadata&.dig("wsgi_module") || "wsgi:application"
+    port   = @detection.port
+
+    <<~DOCKERFILE
+      FROM python:3.11-slim
+
+      WORKDIR /app
+
+      COPY requirements.txt .
+      RUN pip install --no-cache-dir -r requirements.txt gunicorn
+
+      COPY . .
+
+      ENV PYTHONUNBUFFERED=1
+      ENV DJANGO_SETTINGS_MODULE=config.settings.production
+
+      EXPOSE #{port}
+
+      CMD ["gunicorn", "--bind", "0.0.0.0:#{port}", "--workers", "2", "#{wsgi}"]
     DOCKERFILE
   end
 

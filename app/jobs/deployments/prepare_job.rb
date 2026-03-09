@@ -16,6 +16,9 @@ module Deployments
           project    = deployment.project
           repository = project.repository
 
+          deployment.transition_to!("analyzing")
+          deployment.append_log("Analyzing repository…")
+
           deployment.transition_to!("cloning")
           deployment.append_log("Cloning #{repository.full_name} @ #{branch(project)}...")
 
@@ -64,6 +67,24 @@ module Deployments
     end
 
     def detect_framework(deployment, repo_path, project)
+      if project.analysis_fresh?
+        cached = project.analysis_result
+        project.update_columns(
+          framework: cached["framework"],
+          runtime:   cached["runtime"],
+          port:      cached["port"]
+        )
+        deployment.append_log(
+          "Using cached analysis: #{cached['framework']} / #{cached['runtime']} on port #{cached['port']}."
+        )
+        return FrameworkDetector::Result.new(
+          framework: cached["framework"],
+          runtime:   cached["runtime"],
+          port:      cached["port"],
+          metadata:  {}
+        )
+      end
+
       detection = FrameworkDetector.new(repo_path, project).call
       deployment.append_log(
         "Detected #{detection.framework} / #{detection.runtime} on port #{detection.port}."

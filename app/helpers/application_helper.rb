@@ -32,12 +32,16 @@ module ApplicationHelper
 
   def framework_icon(framework)
     case framework.to_s
-    when "rails"  then "&#x1F48E;"   # gem
-    when "node"   then "&#x1F7E9;"   # green square
-    when "python" then "&#x1F40D;"   # snake
-    when "static" then "&#x1F4C4;"   # page
-    when "docker" then "&#x1F433;"   # whale
-    else               "&#x1F4E6;"   # package
+    when "rails"   then "&#x1F48E;"   # gem
+    when "node"    then "&#x1F7E9;"   # green square
+    when "nextjs"  then "&#x25B2;"    # triangle (Vercel-ish)
+    when "python"  then "&#x1F40D;"   # snake
+    when "fastapi" then "&#x26A1;"    # lightning (fast)
+    when "flask"   then "&#x1F9EA;"   # flask/beaker
+    when "django"  then "&#x1F3B8;"   # guitar (Django logo vibe)
+    when "static"  then "&#x1F4C4;"   # page
+    when "docker"  then "&#x1F433;"   # whale
+    else                "&#x1F4E6;"   # package
     end
   end
 end

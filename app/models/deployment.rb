@@ -2,10 +2,10 @@ class Deployment < ApplicationRecord
   # ------------------------------------------------------------------ #
   # Constants                                                            #
   # ------------------------------------------------------------------ #
-  STATUSES = %w[pending cloning detecting building deploying success failed cancelled].freeze
+  STATUSES = %w[pending analyzing cloning detecting building deploying success failed cancelled].freeze
 
   TERMINAL_STATUSES    = %w[success failed cancelled].freeze
-  IN_PROGRESS_STATUSES = %w[pending cloning detecting building deploying].freeze
+  IN_PROGRESS_STATUSES = %w[pending analyzing cloning detecting building deploying].freeze
 
   # ------------------------------------------------------------------ #
   # Associations                                                         #
@@ -54,7 +54,7 @@ class Deployment < ApplicationRecord
     raise ArgumentError, "Unknown status: #{new_status}" unless STATUSES.include?(new_status.to_s)
 
     attrs = { status: new_status.to_s }
-    attrs[:started_at]  = Time.current if new_status.to_s == "cloning" && started_at.nil?
+    attrs[:started_at]  = Time.current if %w[analyzing cloning].include?(new_status.to_s) && started_at.nil?
     attrs[:finished_at] = Time.current if TERMINAL_STATUSES.include?(new_status.to_s)
 
     update!(attrs)
