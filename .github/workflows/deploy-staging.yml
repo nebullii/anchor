@@ -1,0 +1,89 @@
+name: Deploy — Staging
+
+on:
+  push:
+    branches: [staging]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & deploy to staging
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: ${{ secrets.GCP_REGION }}
+      SERVICE: anchor-staging
+      IMAGE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/anchor/app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Ensure Artifact Registry repository exists
+        run: |
+          gcloud artifacts repositories describe anchor \
+            --location=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} 2>/dev/null || \
+          gcloud artifacts repositories create anchor \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE }}:staging-${{ github.sha }} \
+            --tag ${{ env.IMAGE }}:staging-latest \
+            .
+          docker push ${{ env.IMAGE }}:staging-${{ github.sha }}
+          docker push ${{ env.IMAGE }}:staging-latest
+
+      - name: Deploy to Cloud Run (staging)
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image=${{ env.IMAGE }}:staging-${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=1 \
+            --memory=512Mi \
+            --cpu=1 \
+            --cpu-throttling \
+            --no-cpu-boost \
+            --port=8080 \
+            --set-env-vars="RAILS_ENV=production" \
+            --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
+            --set-env-vars="RAILS_SERVE_STATIC_FILES=true" \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_STAGING }}" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}" \
+            --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }}" \
+            --set-env-vars="GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --set-env-vars="ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+
+      - name: Print staging URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+          echo "Staging: $URL"

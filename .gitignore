@@ -36,3 +36,7 @@
 
 /app/assets/builds/*
 !/app/assets/builds/.keep
+
+# Local dev notes — not for version control
+/docs/
+/CLAUDE.md
