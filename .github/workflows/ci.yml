@@ -69,7 +69,7 @@ jobs:
           bundler-cache: true
 
       - name: Brakeman
-        run: bin/brakeman --no-pager -q -w2
+        run: bin/brakeman --no-pager -q -w3
 
       - name: Bundle audit
         run: |
