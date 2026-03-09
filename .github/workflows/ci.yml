@@ -38,7 +38,7 @@ jobs:
       RAILS_ENV: test
       DATABASE_URL: postgresql://anchor:anchor@localhost/anchor_test
       REDIS_URL: redis://localhost:6379/0
-      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+      ENCRYPTION_KEY: "00000000000000000000000000000000"
       GITHUB_CLIENT_ID: test
       GITHUB_CLIENT_SECRET: test
       GOOGLE_CLIENT_ID: test
