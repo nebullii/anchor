@@ -13,6 +13,15 @@ export default class extends Controller {
   static targets = ["button", "label"]
   static values  = { loadingText: { type: String, default: "Deploying…" } }
 
+  connect() {
+    this._onModalOpened = () => this._setLoading(false)
+    document.addEventListener("modal:opened", this._onModalOpened)
+  }
+
+  disconnect() {
+    document.removeEventListener("modal:opened", this._onModalOpened)
+  }
+
   submit(event) {
     // Prevent double-submission.
     if (this.element.dataset.submitting) {
