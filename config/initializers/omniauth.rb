@@ -3,11 +3,14 @@ github_secret = ENV["GITHUB_CLIENT_SECRET"].presence || Rails.application.creden
 google_id     = ENV["GOOGLE_CLIENT_ID"].presence     || Rails.application.credentials.dig(:google, :client_id)
 google_secret = ENV["GOOGLE_CLIENT_SECRET"].presence || Rails.application.credentials.dig(:google, :client_secret)
 
-if Rails.env.production? || Rails.env.development?
-  raise "GITHUB_CLIENT_ID is not set"     if github_id.blank?
-  raise "GITHUB_CLIENT_SECRET is not set" if github_secret.blank?
-  raise "GOOGLE_CLIENT_ID is not set"     if google_id.blank?
-  raise "GOOGLE_CLIENT_SECRET is not set" if google_secret.blank?
+# Validate at server boot (not during asset precompile / rake tasks)
+Rails.application.config.after_initialize do
+  if Rails.env.production? || Rails.env.development?
+    raise "GITHUB_CLIENT_ID is not set"     if ENV["GITHUB_CLIENT_ID"].blank?
+    raise "GITHUB_CLIENT_SECRET is not set" if ENV["GITHUB_CLIENT_SECRET"].blank?
+    raise "GOOGLE_CLIENT_ID is not set"     if ENV["GOOGLE_CLIENT_ID"].blank?
+    raise "GOOGLE_CLIENT_SECRET is not set" if ENV["GOOGLE_CLIENT_SECRET"].blank?
+  end
 end
 
 Rails.application.config.middleware.use OmniAuth::Builder do
