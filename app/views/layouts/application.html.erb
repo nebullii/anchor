@@ -43,12 +43,8 @@
                      alt="<%= current_user.github_login %>">
               <% end %>
               <span class="hidden sm:block text-sm text-gray-400"><%= current_user.github_login %></span>
-              <% unless current_user.google_connected? %>
-                <%= button_to "/auth/google_oauth2", data: { turbo: false },
-                      class: "text-xs text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded border border-amber-800 hover:border-amber-600" do %>
-                  Connect Google
-                <% end %>
-              <% end %>
+              <%= link_to "Settings", settings_path,
+                    class: "text-xs text-gray-400 hover:text-white transition-colors px-3 py-1.5 rounded border border-gray-800 hover:border-gray-600" %>
               <%= button_to logout_path, method: :delete,
                     class: "text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded border border-gray-800 hover:border-gray-600" do %>
                 Sign out

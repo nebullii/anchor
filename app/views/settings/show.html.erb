@@ -1,0 +1,71 @@
+<% content_for :title, "Settings — Anchor" %>
+
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-bold text-white mb-8">Settings</h1>
+
+  <%# ── GCP Credentials ─────────────────────────────────────────── %>
+  <div class="rounded-xl border border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-800">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Google Cloud Credentials</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Required to build and deploy your projects</p>
+        </div>
+        <% if current_user.google_connected? %>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-2.5 py-1 rounded-full">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            Connected
+          </span>
+        <% else %>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-950/50 border border-amber-800/50 px-2.5 py-1 rounded-full">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            Not configured
+          </span>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="px-6 py-5">
+
+      <% if current_user.google_connected? %>
+        <div class="mb-5 flex items-center gap-3 p-3 rounded-lg bg-gray-800/50 border border-gray-700/50">
+          <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+          <div class="text-xs">
+            <p class="text-gray-300 font-mono"><%= current_user.gcp_service_account_email %></p>
+            <p class="text-gray-500 mt-0.5">Project: <%= current_user.gcp_project_from_key %></p>
+          </div>
+        </div>
+      <% end %>
+
+      <%# How to get the key %>
+      <div class="mb-5 space-y-2 text-xs text-gray-400">
+        <p class="font-medium text-gray-300">How to set up a service account:</p>
+        <ol class="list-decimal list-inside space-y-1.5 text-gray-400">
+          <li>Go to <span class="text-gray-200">Google Cloud Console → IAM & Admin → Service Accounts</span></li>
+          <li>Click <span class="text-gray-200">Create Service Account</span></li>
+          <li>Grant these roles: <span class="font-mono text-gray-200">Cloud Build Editor</span>, <span class="font-mono text-gray-200">Cloud Run Admin</span>, <span class="font-mono text-gray-200">Artifact Registry Writer</span>, <span class="font-mono text-gray-200">Service Account User</span></li>
+          <li>Click <span class="text-gray-200">Keys → Add Key → JSON</span> — download the file</li>
+          <li>Paste the full contents below</li>
+        </ol>
+      </div>
+
+      <%= form_with url: gcp_credentials_settings_path, method: :patch, local: false do |f| %>
+        <div class="space-y-3">
+          <%= f.label :gcp_service_account_key,
+                current_user.google_connected? ? "Replace service account key" : "Paste service account key (JSON)",
+                class: "block text-xs font-medium text-gray-400" %>
+          <%= f.text_area :gcp_service_account_key,
+                rows: 6,
+                placeholder: '{"type": "service_account", "project_id": "...", ...}',
+                class: "w-full rounded-lg bg-gray-800 border border-gray-700 text-gray-200 font-mono text-xs px-3 py-2.5 placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none" %>
+          <div class="flex justify-end">
+            <%= f.submit current_user.google_connected? ? "Update credentials" : "Save credentials",
+                  class: "text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-colors cursor-pointer" %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

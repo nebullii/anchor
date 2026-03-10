@@ -11,6 +11,9 @@ class User < ApplicationRecord
   attr_encrypted :google_refresh_token,
                  key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
 
+  attr_encrypted :gcp_service_account_key,
+                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
+
   # ------------------------------------------------------------------ #
   # Associations                                                         #
   # ------------------------------------------------------------------ #
@@ -56,42 +59,39 @@ class User < ApplicationRecord
     name.presence || github_login
   end
 
+  # True when the user has configured a GCP service account key.
   def google_connected?
-    google_refresh_token.present?
+    gcp_service_account_key.present?
   end
 
-  # Returns a fresh access token, refreshing via Google if expired.
-  def fresh_google_access_token
-    return google_access_token if google_token_expires_at&.future?
-    refresh_google_access_token
+  # Returns the parsed service account JSON, or nil.
+  def gcp_credentials
+    return nil unless gcp_service_account_key.present?
+    JSON.parse(gcp_service_account_key)
+  rescue JSON::ParserError
+    nil
   end
 
-  def connect_google(auth)
-    update!(
-      google_email:             auth.info.email,
-      google_access_token:      auth.credentials.token,
-      google_refresh_token:     auth.credentials.refresh_token || google_refresh_token,
-      google_token_expires_at:  Time.at(auth.credentials.expires_at)
-    )
+  # The service account email extracted from the key, used for display.
+  def gcp_service_account_email
+    gcp_credentials&.dig("client_email")
   end
 
-  private
+  # The GCP project ID extracted from the key.
+  def gcp_project_from_key
+    gcp_credentials&.dig("project_id")
+  end
 
-  def refresh_google_access_token
-    response = Faraday.post("https://oauth2.googleapis.com/token") do |req|
-      req.body = {
-        client_id:     ENV["GOOGLE_CLIENT_ID"] || Rails.application.credentials.dig(:google, :client_id),
-        client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
-        refresh_token: google_refresh_token,
-        grant_type:    "refresh_token"
-      }
-    end
-
-    data = JSON.parse(response.body)
-    update!(
-      google_access_token:     data["access_token"],
-      google_token_expires_at: Time.current + data["expires_in"].to_i.seconds
-    )
-    data["access_token"]
+  # Writes the service account key to a temp file and yields the file path.
+  # Cleans up the file after the block completes.
+  def with_gcp_credentials_file
+    raise "GCP service account not configured" unless gcp_service_account_key.present?
+    file = Tempfile.new([ "gcp-sa-#{id}", ".json" ])
+    file.write(gcp_service_account_key)
+    file.flush
+    yield file.path
+  ensure
+    file&.close
+    file&.unlink
   end
 end
