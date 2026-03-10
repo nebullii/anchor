@@ -209,10 +209,51 @@ Each transition broadcasts a Turbo Stream that updates the status badge and outc
 | docker | `Dockerfile` exists | custom | 8080 |
 | rails | `Gemfile` contains "rails" | ruby3.2 | 3000 |
 | node | `package.json` exists | node20 | 3000 |
+| nextjs | `package.json` depends on `next` | node20 | 3000 |
+| fastapi | `requirements.txt` contains `fastapi` | python3.11 | 8000 |
+| flask | `requirements.txt` contains `flask` | python3.11 | 8000 |
+| django | `requirements.txt` contains `django` | python3.11 | 8000 |
 | python | `requirements.txt` or `pyproject.toml` | python3.11 | 8000 |
 | static | `index.html` in root | nginx | 80 |
 
-If no Dockerfile exists, one is generated from a template. The generated file is written into the cloned repo before Cloud Build receives the source.
+If no Dockerfile exists, one is generated from a hardcoded template for the detected framework. The generated file is written into the cloned repo before Cloud Build receives the source.
+
+---
+
+## AI Layer
+
+Two AI-powered features run on top of the deterministic pipeline, both using `claude-haiku-4-5-20251001` via the Anthropic API. Both degrade gracefully — if `ANTHROPIC_API_KEY` is unset or the API call fails, the deploy continues unchanged.
+
+### Repository analysis enrichment
+
+Before the first deploy, `RepositoryAnalysisJob` clones the repo and runs a two-phase analysis:
+
+1. **Deterministic** (`RepositoryAnalyzer`) — detects framework, runtime, port, likely env vars, database type, and dependency list from file contents
+2. **AI enrichment** (`Ai::RepositoryAnalyzer`) — sends the deterministic result + file tree + README to Claude, which returns:
+   - `app_description` — one-sentence description of what the app does
+   - `additional_env_vars` — env vars the deterministic scan missed
+   - `warnings` — additional deployment warnings
+   - `confidence` — high / medium / low on the framework detection
+   - `framework_notes` — corrections or clarifications to the detected framework
+
+The merged result is cached on the project (`analysis_result` JSONB column) and surfaced in the UI before the user hits Deploy.
+
+### Failure explanation
+
+When a deployment fails, `ExplainErrorJob` fires asynchronously and calls `Ai::ErrorExplainer`, which sends the last 100 log lines and the error message to Claude. The response is a 2–4 sentence plain-English explanation of what went wrong and the most likely fix. It is stored on the deployment record and broadcast to the live log terminal if it's still open.
+
+```
+deploy failed
+  └─ ExplainErrorJob (async, default queue)
+       └─ Ai::ErrorExplainer → Anthropic API (Haiku)
+            └─ explanation stored on deployment + broadcast via ActionCable
+```
+
+### Optional environment variable
+
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Enables AI enrichment and error explanation. If unset, both features are silently skipped. |
 
 ---
 
@@ -237,12 +278,14 @@ app/
 │   └── flash_controller.js           Auto-dismiss flash messages
 ├── jobs/
 │   ├── deployment_job.rb             Entry point
+│   ├── repository_analysis_job.rb    Pre-deploy repo analysis (deterministic + AI)
 │   └── deployments/
 │       ├── base_job.rb               Shared error handling, guard_status!
 │       ├── prepare_job.rb            Clone + detect + Dockerfile
 │       ├── build_image_job.rb        Cloud Build submit
 │       ├── poll_build_status_job.rb  Polling with exponential backoff
-│       └── deploy_to_cloud_run_job.rb  gcloud run deploy
+│       ├── deploy_to_cloud_run_job.rb  gcloud run deploy
+│       └── explain_error_job.rb      Async AI failure explanation
 ├── models/
 │   ├── user.rb                       GitHub OAuth, encrypted token
 │   ├── repository.rb                 Synced from GitHub API
@@ -253,6 +296,14 @@ app/
 ├── services/
 │   ├── framework_detector.rb         File-presence heuristics
 │   ├── dockerfile_generator.rb       Templates per framework
+│   ├── repository_analyzer.rb        Orchestrates deterministic analysis
+│   ├── analysis/
+│   │   ├── dependency_reader.rb      Reads deps from lockfiles
+│   │   ├── env_var_detector.rb       Detects likely env vars from source
+│   │   └── database_detector.rb      Detects DB type (postgres, mysql, etc.)
+│   ├── ai/
+│   │   ├── repository_analyzer.rb    AI enrichment of deterministic analysis
+│   │   └── error_explainer.rb        Plain-English failure explanation
 │   └── deployments/
 │       └── cloud_run_deployer.rb     Legacy single-class deployer
 └── views/
