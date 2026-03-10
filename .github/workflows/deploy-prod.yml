@@ -52,6 +52,20 @@ jobs:
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
+      - name: Run database migrations
+        run: |
+          gcloud run jobs delete migrate-prod --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null || true
+          gcloud run jobs create migrate-prod \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --set-env-vars="RAILS_ENV=production" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
+            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --command="/rails/bin/rails" \
+            --args="db:migrate" \
+            --execute-now
+
       - name: Deploy to Cloud Run (production)
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
