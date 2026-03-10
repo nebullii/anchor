@@ -2,6 +2,9 @@
 <%= turbo_stream_from "project_#{@project.id}_deployments" %>
 <%= turbo_stream_from "project_#{@project.id}_analysis" %>
 
+<%# Placeholder replaced via Turbo Stream when deploy is blocked by missing secrets %>
+<div id="missing_secrets_modal"></div>
+
 <%# ── Header ──────────────────────────────────────────────────── %>
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
   <div>

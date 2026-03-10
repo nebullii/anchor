@@ -66,9 +66,9 @@ class ProjectsController < ApplicationController
       respond_to do |format|
         format.turbo_stream do
           render turbo_stream: turbo_stream.replace(
-            "notices",
-            partial: "shared/notice",
-            locals:  { message: "Missing required secrets: #{missing.join(', ')}. Add them before deploying.", type: "error" }
+            "missing_secrets_modal",
+            partial: "projects/missing_secrets_modal",
+            locals:  { project: @project, missing_keys: missing }
           )
         end
         format.html do
