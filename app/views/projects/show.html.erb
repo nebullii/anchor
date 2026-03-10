@@ -45,7 +45,7 @@
   </div>
 </div>
 
-<%# ── Google not connected warning ────────────────────────────── %>
+<%# ── GCP credentials warning ──────────────────────────────────── %>
 <% unless current_user.google_connected? %>
   <div class="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl bg-amber-950/50 border border-amber-800/50">
     <div class="flex items-center gap-3">
@@ -53,13 +53,11 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
       </svg>
       <p class="text-sm text-amber-300">
-        Google Cloud not connected — deployments will fail until you connect your Google account.
+        GCP service account not configured — deployments will fail until you add your credentials.
       </p>
     </div>
-    <%= button_to "/auth/google_oauth2", data: { turbo: false },
-          class: "flex-shrink-0 text-xs font-medium text-amber-900 bg-amber-400 hover:bg-amber-300 px-3 py-1.5 rounded transition-colors" do %>
-      Connect Google
-    <% end %>
+    <%= link_to "Add credentials", settings_path,
+          class: "flex-shrink-0 text-xs font-medium text-amber-900 bg-amber-400 hover:bg-amber-300 px-3 py-1.5 rounded transition-colors" %>
   </div>
 <% end %>
 
@@ -118,12 +116,10 @@
         <div class="flex justify-between gap-2">
           <span class="text-gray-500 flex-shrink-0">Account</span>
           <% if current_user.google_connected? %>
-            <span class="text-emerald-400 text-xs truncate"><%= current_user.google_email %></span>
+            <span class="text-emerald-400 text-xs truncate"><%= current_user.gcp_service_account_email %></span>
           <% else %>
-            <%= button_to "/auth/google_oauth2", data: { turbo: false },
-                  class: "text-xs text-amber-400 hover:text-amber-300 underline" do %>
-              Not connected
-            <% end %>
+            <%= link_to "Not configured", settings_path,
+                  class: "text-xs text-amber-400 hover:text-amber-300 underline" %>
           <% end %>
         </div>
         <div class="flex justify-between gap-2">

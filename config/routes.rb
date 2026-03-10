@@ -2,10 +2,14 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   # Auth
-  get  "/auth/github/callback",       to: "auth#callback"
-  get  "/auth/google_oauth2/callback", to: "auth#google_callback"
-  get  "/auth/failure",               to: "auth#failure"
-  delete "/logout",                   to: "auth#destroy", as: :logout
+  get    "/auth/github/callback", to: "auth#callback"
+  get    "/auth/failure",         to: "auth#failure"
+  delete "/logout",               to: "auth#destroy", as: :logout
+
+  # Settings
+  resource :settings, only: [:show, :update] do
+    patch :gcp_credentials
+  end
 
   # Dashboard
   root "dashboard#index"
