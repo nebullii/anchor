@@ -10,9 +10,23 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_11_100004) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "deployment_events", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "deployment_id", null: false
+    t.string "event_type", null: false
+    t.string "from_status"
+    t.jsonb "metadata", default: {}
+    t.datetime "occurred_at", null: false
+    t.string "to_status"
+    t.datetime "updated_at", null: false
+    t.index ["deployment_id", "occurred_at"], name: "index_deployment_events_on_deployment_id_and_occurred_at"
+    t.index ["deployment_id"], name: "index_deployment_events_on_deployment_id"
+    t.index ["event_type"], name: "index_deployment_events_on_event_type"
+  end
 
   create_table "deployment_logs", force: :cascade do |t|
     t.datetime "created_at", null: false
@@ -37,6 +51,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
     t.text "commit_message"
     t.string "commit_sha"
     t.datetime "created_at", null: false
+    t.jsonb "deployment_plan"
+    t.string "error_category"
     t.text "error_message"
     t.datetime "finished_at"
     t.string "image_url"
@@ -49,8 +65,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
     t.index ["cloud_build_id"], name: "index_deployments_on_cloud_build_id"
     t.index ["commit_sha"], name: "index_deployments_on_commit_sha"
     t.index ["created_at"], name: "index_deployments_on_created_at"
+    t.index ["error_category"], name: "index_deployments_on_error_category"
     t.index ["project_id", "status"], name: "index_deployments_on_project_id_and_status"
     t.index ["project_id"], name: "index_deployments_on_project_id"
+    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text <> ALL ((ARRAY['success'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[]))"
     t.index ["status"], name: "index_deployments_on_status"
     t.index ["triggered_by"], name: "index_deployments_on_triggered_by"
   end
@@ -63,6 +81,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
     t.datetime "created_at", null: false
     t.string "framework"
     t.string "gcp_project_id", null: false
+    t.text "gcp_provision_error"
+    t.boolean "gcp_provisioned", default: false, null: false
+    t.datetime "gcp_provisioned_at"
     t.string "gcp_region", default: "us-central1", null: false
     t.string "latest_url"
     t.string "name", null: false
@@ -77,6 +98,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
     t.bigint "user_id", null: false
     t.index ["analysis_status"], name: "index_projects_on_analysis_status"
     t.index ["gcp_project_id"], name: "index_projects_on_gcp_project_id"
+    t.index ["gcp_provisioned"], name: "index_projects_on_gcp_provisioned"
     t.index ["repository_id"], name: "index_projects_on_repository_id"
     t.index ["service_name"], name: "index_projects_on_service_name"
     t.index ["slug"], name: "index_projects_on_slug", unique: true
@@ -124,6 +146,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
     t.datetime "created_at", null: false
     t.string "default_gcp_project_id"
     t.string "default_gcp_region", default: "us-central1"
+    t.integer "deployments_this_month", default: 0, null: false
+    t.integer "deployments_today", default: 0, null: false
     t.string "email"
     t.text "encrypted_gcp_service_account_key"
     t.string "encrypted_gcp_service_account_key_iv"
@@ -139,12 +163,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
     t.string "google_email"
     t.datetime "google_token_expires_at"
     t.string "name"
+    t.datetime "quota_reset_at"
     t.datetime "updated_at", null: false
     t.index ["email"], name: "index_users_on_email"
     t.index ["github_id"], name: "index_users_on_github_id", unique: true
     t.index ["github_login"], name: "index_users_on_github_login", unique: true
   end
 
+  add_foreign_key "deployment_events", "deployments"
   add_foreign_key "deployment_logs", "deployments"
   add_foreign_key "deployments", "projects"
   add_foreign_key "projects", "repositories"

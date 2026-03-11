@@ -13,6 +13,10 @@ module Deployments
     def with_deployment(deployment_id)
       deployment = Deployment.find(deployment_id)
       yield deployment
+    rescue Deployments::TransientError => e
+      # Transient errors are logged but NOT marked as failed — re-raise for Sidekiq retry.
+      Rails.logger.warn("[#{self.class.name}] Transient error on deployment #{deployment_id}: #{e.message}")
+      raise
     rescue Deployments::DeploymentError => e
       fail_deployment!(deployment, e.message)
     rescue ActiveRecord::RecordNotFound
@@ -37,8 +41,11 @@ module Deployments
     def fail_deployment!(deployment, message)
       return unless deployment
       Rails.logger.error("[#{self.class.name}] Deployment #{deployment.id} failed: #{message}")
-      deployment.update!(error_message: message)
+      category = Deployments::ErrorCategorizer.categorize(message)
+      deployment.update!(error_message: message, error_category: category)
       deployment.append_log(message, level: "error")
+      hint = Deployments::ErrorCategorizer.user_hint(category)
+      deployment.append_log("Hint: #{hint}", level: "error") if hint.present?
       deployment.transition_to!("failed")
       ExplainErrorJob.perform_later(deployment.id)
     end

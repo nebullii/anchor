@@ -64,7 +64,7 @@ module Deployments
     def full_image_url(deployment)
       project = deployment.project
       "#{project.gcp_region}-docker.pkg.dev" \
-      "/#{project.gcp_project_id}/cloudlaunch" \
+      "/#{project.gcp_project_id}/anchor" \
       "/#{project.service_name}:#{deployment.id}"
     end
 
