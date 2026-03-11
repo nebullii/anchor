@@ -9,8 +9,7 @@ Rails.application.config.after_initialize do
   if Rails.env.production? || Rails.env.development?
     raise "GITHUB_CLIENT_ID is not set"     if ENV["GITHUB_CLIENT_ID"].blank?
     raise "GITHUB_CLIENT_SECRET is not set" if ENV["GITHUB_CLIENT_SECRET"].blank?
-    raise "GOOGLE_CLIENT_ID is not set"     if ENV["GOOGLE_CLIENT_ID"].blank?
-    raise "GOOGLE_CLIENT_SECRET is not set" if ENV["GOOGLE_CLIENT_SECRET"].blank?
+    # Google OAuth removed — GCP access via service account key instead.
   end
 end
 
@@ -20,13 +19,8 @@ Rails.application.config.middleware.use OmniAuth::Builder do
            github_secret,
            scope: "user:email,repo,workflow"
 
-  provider :google_oauth2,
-           google_id,
-           google_secret,
-           scope: "email,https://www.googleapis.com/auth/cloud-platform",
-           access_type: "offline",
-           prompt: "consent",
-           include_granted_scopes: true
+  # Google OAuth is intentionally removed.
+  # GCP access is handled via service account key (Settings → GCP Credentials).
 end
 
 OmniAuth.config.allowed_request_methods = %i[post]

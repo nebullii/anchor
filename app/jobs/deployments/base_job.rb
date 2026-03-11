@@ -43,28 +43,31 @@ module Deployments
       ExplainErrorJob.perform_later(deployment.id)
     end
 
-    # Returns env vars to inject into every gcloud command so it authenticates
-    # as the project owner rather than the machine's default credentials.
-    def gcloud_env(deployment)
+    # Runs a gcloud command authenticated via the user's GCP service account key.
+    # The key is written to a temp file for the duration of the command only.
+    def run_gcloud!(cmd, deployment:, source: "system")
       user = deployment.project.user
+
       unless user.google_connected?
         raise Deployments::DeploymentError,
-              "Google Cloud not connected. Please connect your Google account in settings."
+              "GCP service account not configured. Add your service account key in Settings."
       end
-      token = user.fresh_google_access_token
-      { "CLOUDSDK_AUTH_ACCESS_TOKEN" => token, "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1" }
-    end
 
-    # Runs a shell command with gcloud auth env injected.
-    def run_gcloud!(cmd, deployment:, source: "system")
-      env = gcloud_env(deployment)
       output_lines = []
 
-      IO.popen(env, "#{cmd} 2>&1") do |io|
-        io.each_line do |raw|
-          line = raw.chomp
-          output_lines << line
-          deployment.append_log(line, source: source) if line.present?
+      user.with_gcp_credentials_file do |key_path|
+        env = {
+          "GOOGLE_APPLICATION_CREDENTIALS"         => key_path,
+          "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE" => key_path,
+          "CLOUDSDK_CORE_DISABLE_PROMPTS"          => "1"
+        }
+
+        IO.popen(env, "#{cmd} 2>&1") do |io|
+          io.each_line do |raw|
+            line = raw.chomp
+            output_lines << line
+            deployment.append_log(line, source: source) if line.present?
+          end
         end
       end
 
