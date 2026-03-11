@@ -41,8 +41,6 @@ jobs:
       ENCRYPTION_KEY: "00000000000000000000000000000000"
       GITHUB_CLIENT_ID: test
       GITHUB_CLIENT_SECRET: test
-      GOOGLE_CLIENT_ID: test
-      GOOGLE_CLIENT_SECRET: test
 
     steps:
       - uses: actions/checkout@v4

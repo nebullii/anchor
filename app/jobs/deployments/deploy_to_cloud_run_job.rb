@@ -31,12 +31,29 @@ module Deployments
     private
 
     def run_deploy(deployment, project)
-      cmd = build_command(deployment, project)
-      output = run_gcloud!(cmd, deployment: deployment, source: "cloud_run")
+      env_file = write_env_vars_file(project)
+      cmd      = build_command(deployment, project, env_file&.path)
+      output   = run_gcloud!(cmd, deployment: deployment, source: "cloud_run")
       extract_url(output, project)
+    ensure
+      env_file&.close
+      env_file&.unlink
     end
 
-    def build_command(deployment, project)
+    # Writes env vars as a YAML file safe for --env-vars-file.
+    # Returns nil if there are no secrets.
+    def write_env_vars_file(project)
+      env_hash = Secret.to_env_hash(project)
+      return nil if env_hash.empty?
+
+      file = Tempfile.new([ "cr-env-#{project.id}-", ".yaml" ])
+      yaml = env_hash.transform_values(&:to_s).to_yaml
+      file.write(yaml)
+      file.flush
+      file
+    end
+
+    def build_command(deployment, project, env_vars_file_path)
       parts = [
         "gcloud run deploy #{Shellwords.escape(project.service_name)}",
         "--project=#{Shellwords.escape(project.gcp_project_id)}",
@@ -52,8 +69,8 @@ module Deployments
         "--format=json"
       ]
 
-      env_string = build_env_string(project)
-      parts << "--set-env-vars=#{Shellwords.escape(env_string)}" if env_string.present?
+      # Use --env-vars-file (YAML key: value) to avoid injection via commas/equals in values.
+      parts << "--env-vars-file=#{Shellwords.escape(env_vars_file_path)}" if env_vars_file_path
 
       parts.join(" \\\n  ")
     end
@@ -78,10 +95,6 @@ module Deployments
       match = output.match(%r{https://[\w\-]+\.run\.app})
       raise Deployments::DeploymentError, "Could not extract service URL" unless match
       match[0]
-    end
-
-    def build_env_string(project)
-      Secret.to_cloud_run_env_string(project)
     end
 
     def container_port(project)
