@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_09_200323) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_11_025339) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -125,12 +125,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_09_200323) do
     t.string "default_gcp_project_id"
     t.string "default_gcp_region", default: "us-central1"
     t.string "email"
+    t.text "encrypted_gcp_service_account_key"
+    t.string "encrypted_gcp_service_account_key_iv"
     t.string "encrypted_github_token", null: false
     t.string "encrypted_github_token_iv"
     t.text "encrypted_google_access_token"
     t.string "encrypted_google_access_token_iv"
     t.text "encrypted_google_refresh_token"
     t.string "encrypted_google_refresh_token_iv"
+    t.string "gcp_service_account_email"
     t.string "github_id", null: false
     t.string "github_login", null: false
     t.string "google_email"
