@@ -19,7 +19,6 @@ gem "redis", "~> 5.0"
 
 # GitHub OAuth + API
 gem "omniauth-github", "~> 2.0"
-gem "omniauth-google-oauth2", "~> 1.0"
 gem "omniauth-rails_csrf_protection"
 gem "octokit", "~> 8.0"
 
@@ -33,6 +32,9 @@ gem "googleauth",                  "~> 1.0"
 
 # HTTP client (GitHub API calls, webhooks)
 gem "faraday", "~> 2.0"
+
+# Rate limiting
+gem "rack-attack", "~> 6.7"
 
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"

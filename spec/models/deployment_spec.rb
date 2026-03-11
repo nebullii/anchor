@@ -14,8 +14,10 @@ RSpec.describe Deployment, type: :model do
     let(:project) { create(:project) }
 
     it ".in_progress returns non-terminal deployments" do
+      # Each in-progress deployment must use a different project (unique partial index).
+      project2  = create(:project, user: project.user, repository: project.repository)
       pending_d = create(:deployment, project: project, status: "pending")
-      cloning   = create(:deployment, :cloning, project: project)
+      cloning   = create(:deployment, :cloning, project: project2)
       success   = create(:deployment, :success, project: project)
 
       expect(Deployment.in_progress).to include(pending_d, cloning)

@@ -38,5 +38,8 @@ module Anchor
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+
+    # Rate limiting middleware
+    config.middleware.use Rack::Attack
   end
 end

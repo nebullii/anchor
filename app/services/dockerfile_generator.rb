@@ -29,6 +29,9 @@ class DockerfileGenerator
     when "django"  then django_template
     when "python"  then python_template
     when "static"  then static_template
+    when "go"      then go_template
+    when "bun"     then bun_template
+    when "elixir"  then elixir_template
     else                nil   # "docker" framework already has a Dockerfile
     end
   end
@@ -44,31 +47,60 @@ class DockerfileGenerator
     port         = @detection.port
 
     <<~DOCKERFILE
-      FROM ruby:#{ruby_version}-slim
+      # syntax=docker/dockerfile:1
+
+      # ── Build stage ───────────────────────────────────────────────────────────
+      FROM ruby:#{ruby_version}-slim AS build
 
       RUN apt-get update -qq && \\
-          apt-get install -y --no-install-recommends \\
-            build-essential \\
-            libpq-dev \\
-            nodejs \\
-            curl && \\
-          rm -rf /var/lib/apt/lists/*
+          apt-get install --no-install-recommends -y \\
+            build-essential git libpq-dev libyaml-dev pkg-config curl nodejs && \\
+          rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+      ENV RAILS_ENV=production \\
+          BUNDLE_DEPLOYMENT=1 \\
+          BUNDLE_PATH=/usr/local/bundle \\
+          BUNDLE_WITHOUT=development:test
 
       WORKDIR /app
 
       #{copy_lock}
-      RUN bundle install --without development test --jobs 4 --retry 3
+      RUN bundle install --jobs 4 --retry 3 && \\
+          rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
       COPY . .
 
       # Precompile assets — ignore errors for API-only apps.
-      RUN SECRET_KEY_BASE=placeholder bundle exec rails assets:precompile 2>/dev/null || true
+      RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile 2>/dev/null || true
 
-      ENV RAILS_ENV=production
-      ENV RAILS_LOG_TO_STDOUT=true
-      ENV RAILS_SERVE_STATIC_FILES=true
+      # ── Final stage ───────────────────────────────────────────────────────────
+      FROM ruby:#{ruby_version}-slim
+
+      RUN apt-get update -qq && \\
+          apt-get install --no-install-recommends -y libpq5 libjemalloc2 && \\
+          rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+      # Non-root user for security
+      RUN groupadd --system --gid 1000 rails && \\
+          useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
+      USER 1000:1000
+
+      ENV RAILS_ENV=production \\
+          BUNDLE_DEPLOYMENT=1 \\
+          BUNDLE_PATH=/usr/local/bundle \\
+          BUNDLE_WITHOUT=development:test \\
+          RAILS_LOG_TO_STDOUT=true \\
+          RAILS_SERVE_STATIC_FILES=true
+
+      WORKDIR /app
+
+      COPY --chown=rails:rails --from=build /usr/local/bundle /usr/local/bundle
+      COPY --chown=rails:rails --from=build /app /app
 
       EXPOSE #{port}
+
+      HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+        CMD curl -f http://localhost:#{port}/up || exit 1
 
       CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
     DOCKERFILE
@@ -270,5 +302,148 @@ class DockerfileGenerator
 
       CMD ["nginx", "-g", "daemon off;"]
     DOCKERFILE
+  end
+
+  def go_template
+    go_version  = @detection.metadata&.dig("go_version") || "1.22"
+    module_name = @detection.metadata&.dig("module_name") || "app"
+    port        = @detection.port
+
+    <<~DOCKERFILE
+      # syntax=docker/dockerfile:1
+
+      # ── Build stage ───────────────────────────────────────────────────────────
+      FROM golang:#{go_version}-alpine AS build
+
+      RUN apk add --no-cache git ca-certificates
+
+      WORKDIR /src
+
+      COPY go.mod go.sum ./
+      RUN go mod download
+
+      COPY . .
+
+      RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bin/app ./...
+
+      # ── Final stage ───────────────────────────────────────────────────────────
+      FROM gcr.io/distroless/static-debian12
+
+      COPY --from=build /bin/app /app
+      COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+      EXPOSE #{port}
+
+      HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \\
+        CMD ["/app", "-healthcheck"] || exit 1
+
+      ENTRYPOINT ["/app"]
+    DOCKERFILE
+  end
+
+  def bun_template
+    port        = @detection.port
+    start_cmd   = @detection.metadata&.dig("start_script") ? '["bun", "run", "start"]' : '["bun", "run", "index.ts"]'
+    build_script = @detection.metadata&.dig("build_script")
+    build_step   = build_script ? "RUN bun run build" : ""
+
+    <<~DOCKERFILE
+      FROM oven/bun:1-alpine AS build
+
+      WORKDIR /app
+
+      COPY package.json bun.lock* bun.lockb* ./
+      RUN bun install --frozen-lockfile
+
+      COPY . .
+      #{build_step}
+
+      FROM oven/bun:1-alpine
+
+      WORKDIR /app
+      COPY --from=build /app /app
+
+      ENV NODE_ENV=production
+      EXPOSE #{port}
+
+      HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:#{port}/health || exit 1
+
+      CMD #{start_cmd}
+    DOCKERFILE
+  end
+
+  def elixir_template
+    app_name   = @detection.metadata&.dig("mix_project") || "app"
+    has_phoenix = @detection.metadata&.dig("has_phoenix")
+    port        = @detection.port
+
+    if has_phoenix
+      <<~DOCKERFILE
+        # syntax=docker/dockerfile:1
+
+        # ── Build stage ───────────────────────────────────────────────────────────
+        FROM hexpm/elixir:1.16.3-erlang-26.2.5-alpine-3.20.3 AS build
+
+        RUN apk add --no-cache build-base git npm
+
+        WORKDIR /app
+
+        RUN mix local.hex --force && mix local.rebar --force
+
+        ENV MIX_ENV=prod
+
+        COPY mix.exs mix.lock ./
+        RUN mix deps.get --only prod
+        RUN mix deps.compile
+
+        COPY assets assets
+        RUN npm install --prefix assets && npm run deploy --prefix assets
+
+        COPY . .
+        RUN mix compile
+        RUN mix assets.deploy
+        RUN mix release
+
+        # ── Final stage ───────────────────────────────────────────────────────────
+        FROM alpine:3.20
+
+        RUN apk add --no-cache libstdc++ openssl ncurses-libs
+
+        WORKDIR /app
+
+        RUN addgroup -g 1000 elixir && adduser -u 1000 -G elixir -s /bin/sh -D elixir
+        USER elixir:elixir
+
+        COPY --from=build --chown=elixir:elixir /app/_build/prod/rel/#{app_name} ./
+
+        ENV PHX_SERVER=true
+        EXPOSE #{port}
+
+        HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:#{port}/health || exit 1
+
+        CMD ["bin/#{app_name}", "start"]
+      DOCKERFILE
+    else
+      <<~DOCKERFILE
+        FROM hexpm/elixir:1.16.3-erlang-26.2.5-alpine-3.20.3
+
+        RUN apk add --no-cache build-base git
+        RUN mix local.hex --force && mix local.rebar --force
+
+        WORKDIR /app
+
+        ENV MIX_ENV=prod
+
+        COPY mix.exs mix.lock ./
+        RUN mix deps.get --only prod && mix deps.compile
+
+        COPY . .
+        RUN mix release
+
+        EXPOSE #{port}
+
+        CMD ["_build/prod/rel/#{app_name}/bin/#{app_name}", "start"]
+      DOCKERFILE
+    end
   end
 end

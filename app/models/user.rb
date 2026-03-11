@@ -82,6 +82,28 @@ class User < ApplicationRecord
     gcp_credentials&.dig("project_id")
   end
 
+  # ------------------------------------------------------------------ #
+  # Deployment quotas                                                    #
+  # ------------------------------------------------------------------ #
+  DAILY_DEPLOY_LIMIT   = 20
+  MONTHLY_DEPLOY_LIMIT = 200
+
+  def within_deploy_quota?
+    reset_quota_if_needed!
+    deployments_today < DAILY_DEPLOY_LIMIT &&
+      deployments_this_month < MONTHLY_DEPLOY_LIMIT
+  end
+
+  def increment_deploy_quota!
+    reset_quota_if_needed!
+    increment!(:deployments_today)
+    increment!(:deployments_this_month)
+  end
+
+  # ------------------------------------------------------------------ #
+  # GCP credentials                                                      #
+  # ------------------------------------------------------------------ #
+
   # Writes the service account key to a temp file and yields the file path.
   # Cleans up the file after the block completes.
   def with_gcp_credentials_file
@@ -93,5 +115,19 @@ class User < ApplicationRecord
   ensure
     file&.close
     file&.unlink
+  end
+
+  private
+
+  def reset_quota_if_needed!
+    now = Time.current
+    return unless quota_reset_at.nil? || now > quota_reset_at
+
+    reset_at = now.beginning_of_day + 1.day
+    update_columns(
+      deployments_today:      0,
+      deployments_this_month: now.day == 1 ? 0 : deployments_this_month,
+      quota_reset_at:         reset_at
+    )
   end
 end
