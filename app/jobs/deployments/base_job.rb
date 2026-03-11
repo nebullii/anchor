@@ -43,16 +43,36 @@ module Deployments
       ExplainErrorJob.perform_later(deployment.id)
     end
 
-    # Returns env vars to inject into every gcloud command so it authenticates
-    # as the project owner rather than the machine's default credentials.
+    # Returns env vars to inject into every gcloud command.
+    # Prefers the project-scoped service account key when available;
+    # falls back to the user's OAuth access token.
     def gcloud_env(deployment)
       user = deployment.project.user
       unless user.google_connected?
         raise Deployments::DeploymentError,
               "Google Cloud not connected. Please connect your Google account in settings."
       end
-      token = user.fresh_google_access_token
-      { "CLOUDSDK_AUTH_ACCESS_TOKEN" => token, "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1" }
+
+      env = { "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1" }
+
+      if user.gcp_configured?
+        key_path = write_service_account_key(deployment)
+        env["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
+      else
+        env["CLOUDSDK_AUTH_ACCESS_TOKEN"] = user.fresh_google_access_token
+      end
+
+      env
+    end
+
+    # Writes the service account JSON key to a temp file for this deployment.
+    # The file is scoped to the deployment so concurrent jobs don't collide.
+    def write_service_account_key(deployment)
+      dir  = "/tmp/cloudlaunch/credentials"
+      path = "#{dir}/#{deployment.id}.json"
+      FileUtils.mkdir_p(dir)
+      File.write(path, deployment.project.user.gcp_service_account_key)
+      path
     end
 
     # Runs a shell command with gcloud auth env injected.

@@ -11,6 +11,9 @@ class User < ApplicationRecord
   attr_encrypted :google_refresh_token,
                  key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
 
+  attr_encrypted :gcp_service_account_key,
+                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
+
   # ------------------------------------------------------------------ #
   # Associations                                                         #
   # ------------------------------------------------------------------ #
@@ -58,6 +61,18 @@ class User < ApplicationRecord
 
   def google_connected?
     google_refresh_token.present?
+  end
+
+  def gcp_configured?
+    gcp_service_account_key.present?
+  end
+
+  def store_gcp_service_account(project_id, service_account_email, key_json)
+    update!(
+      default_gcp_project_id:     project_id,
+      gcp_service_account_email:  service_account_email,
+      gcp_service_account_key:    key_json
+    )
   end
 
   # Returns a fresh access token, refreshing via Google if expired.
