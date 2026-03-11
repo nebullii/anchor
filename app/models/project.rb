@@ -3,7 +3,7 @@ class Project < ApplicationRecord
   # Constants                                                            #
   # ------------------------------------------------------------------ #
   STATUSES          = %w[inactive active building error].freeze
-  FRAMEWORKS        = %w[rails node python fastapi flask django nextjs static docker unknown].freeze
+  FRAMEWORKS        = %w[rails node python fastapi flask django nextjs static docker go bun elixir unknown].freeze
   ANALYSIS_STATUSES = %w[pending analyzing complete failed].freeze
   REGIONS    = %w[
     us-central1 us-east1 us-west1
@@ -39,6 +39,7 @@ class Project < ApplicationRecord
   # ------------------------------------------------------------------ #
   before_validation :set_slug,         on: :create
   before_validation :set_service_name, on: :create
+  after_create      :enqueue_provisioning
 
   # ------------------------------------------------------------------ #
   # Scopes                                                               #
@@ -91,6 +92,11 @@ class Project < ApplicationRecord
     required_keys - existing_keys
   end
 
+  # True if a concurrent active deployment already exists for this project.
+  def has_active_deployment?
+    deployments.in_progress.exists?
+  end
+
   private
 
   def set_slug
@@ -101,6 +107,10 @@ class Project < ApplicationRecord
 
   def set_service_name
     self.service_name ||= "cl-#{slug}"
+  end
+
+  def enqueue_provisioning
+    Gcp::ProvisionProjectJob.perform_later(id)
   end
 
   def unique_slug(base)

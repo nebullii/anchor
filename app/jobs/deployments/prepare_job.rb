@@ -8,6 +8,9 @@ module Deployments
   #   - Hand off to BuildImageJob
   #
   class PrepareJob < BaseJob
+    # Repositories larger than this are rejected before cloning.
+    REPO_SIZE_LIMIT_KB = 500_000  # 500 MB
+
     def perform(deployment_id)
       catch(:skip) do
         with_deployment(deployment_id) do |deployment|
@@ -18,6 +21,8 @@ module Deployments
 
           deployment.transition_to!("analyzing")
           deployment.append_log("Analyzing repository…")
+
+          guard_repo_size!(deployment, repository)
 
           deployment.transition_to!("cloning")
           deployment.append_log("Cloning #{repository.full_name} @ #{branch(project)}...")
@@ -133,6 +138,16 @@ module Deployments
       out = `git -C #{Shellwords.escape(repo_path)} #{args} 2>&1`
       raise Deployments::DeploymentError, "git #{args} failed: #{out}" unless $?.success?
       out
+    end
+
+    def guard_repo_size!(deployment, repository)
+      size_kb = repository.size_kb.to_i
+      return if size_kb.zero?  # size unknown — allow through
+      return if size_kb <= REPO_SIZE_LIMIT_KB
+
+      raise Deployments::DeploymentError,
+            "Repository is too large to deploy (#{(size_kb / 1024.0).round(1)} MB). " \
+            "Maximum allowed size is #{REPO_SIZE_LIMIT_KB / 1024} MB."
     end
 
     def branch(project)

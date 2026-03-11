@@ -239,11 +239,6 @@ GEM
     omniauth-github (2.0.1)
       omniauth (~> 2.0)
       omniauth-oauth2 (~> 1.8)
-    omniauth-google-oauth2 (1.2.2)
-      jwt (>= 2.9.2)
-      oauth2 (~> 2.0)
-      omniauth (~> 2.0)
-      omniauth-oauth2 (~> 1.8)
     omniauth-oauth2 (1.9.0)
       oauth2 (>= 2.0.2, < 3)
       omniauth (~> 2.0)
@@ -277,6 +272,8 @@ GEM
       nio4r (~> 2.0)
     racc (1.8.1)
     rack (3.2.5)
+    rack-attack (6.8.0)
+      rack (>= 1.0, < 4)
     rack-protection (4.2.1)
       base64 (>= 0.1.0)
       logger (>= 1.6.0)
@@ -472,11 +469,11 @@ DEPENDENCIES
   importmap-rails
   octokit (~> 8.0)
   omniauth-github (~> 2.0)
-  omniauth-google-oauth2 (~> 1.0)
   omniauth-rails_csrf_protection
   pg (~> 1.1)
   propshaft
   puma (>= 5.0)
+  rack-attack (~> 6.7)
   rails (~> 8.1.2)
   redis (~> 5.0)
   rspec-rails (~> 7.0)

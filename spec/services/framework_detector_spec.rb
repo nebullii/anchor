@@ -166,6 +166,79 @@ RSpec.describe FrameworkDetector do
       expect(subject.call.framework).to eq("node")
     end
 
+    # ── New: Go ──────────────────────────────────────────────────── #
+
+    it "detects go when go.mod exists" do
+      write("go.mod", "module github.com/user/myapp\n\ngo 1.21\n")
+      result = subject.call
+      expect(result.framework).to eq("go")
+      expect(result.port).to eq(8080)
+      expect(result.runtime).to eq("go1.22")
+    end
+
+    it "reads go version from go.mod" do
+      write("go.mod", "module example.com/app\n\ngo 1.22.3\n")
+      result = subject.call
+      expect(result.metadata["go_version"]).to eq("1.22")
+    end
+
+    it "reads module name from go.mod" do
+      write("go.mod", "module github.com/myorg/myservice\n\ngo 1.21\n")
+      result = subject.call
+      expect(result.metadata["module_name"]).to eq("github.com/myorg/myservice")
+    end
+
+    it "prefers docker over go" do
+      touch("Dockerfile")
+      write("go.mod", "module example.com/app\n\ngo 1.21\n")
+      expect(subject.call.framework).to eq("docker")
+    end
+
+    # ── New: Bun ─────────────────────────────────────────────────── #
+
+    it "detects bun when bun.lockb exists" do
+      write("package.json", '{"scripts":{"start":"bun run index.ts"}}')
+      touch("bun.lockb")
+      result = subject.call
+      expect(result.framework).to eq("bun")
+      expect(result.port).to eq(3000)
+    end
+
+    it "detects bun when bun.lock exists" do
+      write("package.json", "{}")
+      touch("bun.lock")
+      result = subject.call
+      expect(result.framework).to eq("bun")
+    end
+
+    it "prefers bun over node when both package.json and bun.lockb exist" do
+      write("package.json", '{"dependencies":{"express":"^4"}}')
+      touch("bun.lockb")
+      expect(subject.call.framework).to eq("bun")
+    end
+
+    # ── New: Elixir ───────────────────────────────────────────────── #
+
+    it "detects elixir when mix.exs exists" do
+      write("mix.exs", "defmodule MyApp.MixProject do\n  def project, do: [app: :my_app]\nend\n")
+      result = subject.call
+      expect(result.framework).to eq("elixir")
+      expect(result.port).to eq(4000)
+    end
+
+    it "detects phoenix apps" do
+      write("mix.exs", "defmodule MyApp.MixProject do\n  def project, do: [app: :my_app]\n  {:phoenix, \"~> 1.7\"}\nend\n")
+      result = subject.call
+      expect(result.framework).to eq("elixir")
+      expect(result.metadata["has_phoenix"]).to be true
+    end
+
+    it "reads app name from mix.exs" do
+      write("mix.exs", "defmodule MyApp.MixProject do\n  def project do\n    [app: :hello_world]\n  end\nend\n")
+      result = subject.call
+      expect(result.metadata["mix_project"]).to eq("hello_world")
+    end
+
     # ── Static only matches without server-side signals ──────────── #
 
     it "does not detect static when package.json is present" do
@@ -177,6 +250,12 @@ RSpec.describe FrameworkDetector do
     it "does not detect static when requirements.txt is present" do
       touch("index.html")
       write("requirements.txt", "flask")
+      expect(subject.call.framework).not_to eq("static")
+    end
+
+    it "does not detect static when go.mod is present" do
+      touch("index.html")
+      write("go.mod", "module example.com\n\ngo 1.21\n")
       expect(subject.call.framework).not_to eq("static")
     end
 
