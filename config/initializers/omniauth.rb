@@ -23,7 +23,7 @@ Rails.application.config.middleware.use OmniAuth::Builder do
   provider :google_oauth2,
            google_id,
            google_secret,
-           scope: "email,https://www.googleapis.com/auth/cloud-platform",
+           scope: "email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/cloudplatformprojects.readonly",
            access_type: "offline",
            prompt: "consent",
            include_granted_scopes: true

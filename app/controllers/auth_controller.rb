@@ -13,7 +13,7 @@ class AuthController < ApplicationController
 
   def google_callback
     current_user.connect_google(request.env["omniauth.auth"])
-    redirect_to root_path, notice: "Google Cloud connected as #{current_user.google_email}."
+    redirect_to gcp_projects_path, notice: "Google connected. Now select your GCP project."
   rescue => e
     Rails.logger.error("Google OAuth error: #{e.message}")
     redirect_to root_path, alert: "Google sign in failed. Please try again."

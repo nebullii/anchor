@@ -1,0 +1,40 @@
+<div class="max-w-xl mx-auto mt-16 px-4">
+  <h1 class="text-2xl font-semibold text-gray-900 mb-2">Select a GCP Project</h1>
+  <p class="text-sm text-gray-500 mb-8">
+    Anchor will create a service account in this project with the permissions needed to build and deploy your apps.
+  </p>
+
+  <%= form_with url: gcp_projects_path, method: :post do |f| %>
+    <div class="space-y-3 mb-6">
+      <% @projects.each do |project| %>
+        <label class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+          <%= radio_button_tag :gcp_project_id, project[:id], false,
+                class: "mt-0.5 accent-blue-600" %>
+          <div>
+            <div class="text-sm font-medium text-gray-900"><%= project[:name] %></div>
+            <div class="text-xs text-gray-500"><%= project[:id] %></div>
+          </div>
+        </label>
+      <% end %>
+
+      <% if @projects.empty? %>
+        <p class="text-sm text-gray-500 italic">
+          No active GCP projects found. Create one at
+          <%= link_to "console.cloud.google.com", "https://console.cloud.google.com",
+                target: "_blank", class: "text-blue-600 underline" %>.
+        </p>
+      <% end %>
+    </div>
+
+    <% unless @projects.empty? %>
+      <%= f.submit "Connect Project →",
+            class: "w-full py-2 px-4 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 cursor-pointer" %>
+    <% end %>
+  <% end %>
+
+  <p class="mt-6 text-xs text-gray-400">
+    Anchor will create a <code>anchor-deploy</code> service account with
+    Cloud Build, Cloud Run, Artifact Registry, and Storage permissions.
+    You can revoke access at any time from your GCP IAM console.
+  </p>
+</div>
