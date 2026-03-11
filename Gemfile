@@ -46,7 +46,7 @@ group :development, :test do
 end
 
 group :test do
-  gem "shoulda-matchers", "~> 5.0"
+  gem "shoulda-matchers", "~> 7.0"
   gem "webmock", "~> 3.0"
 end
 
