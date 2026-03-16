@@ -116,7 +116,7 @@
         <div class="flex justify-between gap-2">
           <span class="text-gray-500 flex-shrink-0">Account</span>
           <% if current_user.google_connected? %>
-            <span class="text-emerald-400 text-xs truncate"><%= current_user.gcp_service_account_email %></span>
+            <span class="text-emerald-400 text-xs truncate"><%= current_user.connected_google_email %></span>
           <% else %>
             <%= link_to "Not configured", settings_path,
                   class: "text-xs text-amber-400 hover:text-amber-300 underline" %>
@@ -145,6 +145,8 @@
       </div>
       <p class="text-sm text-gray-400"><%= @secrets.count %> environment variable<%= @secrets.count == 1 ? "" : "s" %></p>
     </div>
+
+    <%= render "projects/free_tier_panel" %>
 
   </div>
 </div>

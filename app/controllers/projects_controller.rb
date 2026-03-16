@@ -80,7 +80,7 @@ class ProjectsController < ApplicationController
     end
 
     @deployment = @project.deployments.create!(
-      status:       "pending",
+      status:       "queued",
       triggered_by: "manual",
       branch:       @project.production_branch
     )
