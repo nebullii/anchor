@@ -59,8 +59,14 @@ class User < ApplicationRecord
     name.presence || github_login
   end
 
+  # True when the user has connected Google Cloud via OAuth OR service account key.
   def google_connected?
-    google_refresh_token.present?
+    google_access_token.present? || gcp_service_account_key.present?
+  end
+
+  # True only when connected via OAuth.
+  def google_oauth_connected?
+    google_access_token.present?
   end
 
   def gcp_configured?
@@ -78,35 +84,104 @@ class User < ApplicationRecord
   # Returns a fresh access token, refreshing via Google if expired.
   def fresh_google_access_token
     return google_access_token if google_token_expires_at&.future?
-    refresh_google_access_token
+    fresh_google_token!
   end
 
-  def connect_google(auth)
-    update!(
-      google_email:             auth.info.email,
-      google_access_token:      auth.credentials.token,
-      google_refresh_token:     auth.credentials.refresh_token || google_refresh_token,
-      google_token_expires_at:  Time.at(auth.credentials.expires_at)
+  # Returns a fresh OAuth access token, refreshing it first if expired.
+  # Raises if no OAuth tokens are stored.
+  def fresh_google_token!
+    raise "Google account not connected via OAuth" unless google_refresh_token.present?
+
+    if google_token_expires_at.nil? || google_token_expires_at <= 5.minutes.from_now
+      refresh_google_token!
+    end
+
+    google_access_token
+  end
+
+  # Exchanges the stored refresh token for a new access token.
+  def refresh_google_token!
+    require "signet/oauth_2/client"
+
+    client = Signet::OAuth2::Client.new(
+      token_credential_uri: "https://oauth2.googleapis.com/token",
+      client_id:     ENV["GOOGLE_CLIENT_ID"]     || Rails.application.credentials.dig(:google, :client_id),
+      client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
+      refresh_token: google_refresh_token
     )
+    client.refresh!
+
+    update!(
+      google_access_token:     client.access_token,
+      google_token_expires_at: Time.at(client.expires_at)
+    )
+  end
+
+  # The email address of the connected Google account (OAuth), or the
+  # service account email extracted from the JSON key.
+  def connected_google_email
+    google_email.presence || gcp_credentials&.dig("client_email")
+  end
+
+  # Returns the parsed service account JSON, or nil.
+  def gcp_credentials
+    return nil unless gcp_service_account_key.present?
+    JSON.parse(gcp_service_account_key)
+  rescue JSON::ParserError
+    nil
+  end
+
+  # The GCP project ID extracted from the service account key.
+  def gcp_project_from_key
+    gcp_credentials&.dig("project_id")
+  end
+
+  # ------------------------------------------------------------------ #
+  # Deployment quotas                                                    #
+  # ------------------------------------------------------------------ #
+  DAILY_DEPLOY_LIMIT   = 20
+  MONTHLY_DEPLOY_LIMIT = 200
+
+  def within_deploy_quota?
+    reset_quota_if_needed!
+    deployments_today < DAILY_DEPLOY_LIMIT &&
+      deployments_this_month < MONTHLY_DEPLOY_LIMIT
+  end
+
+  def increment_deploy_quota!
+    reset_quota_if_needed!
+    increment!(:deployments_today)
+    increment!(:deployments_this_month)
+  end
+
+  # ------------------------------------------------------------------ #
+  # GCP credentials                                                      #
+  # ------------------------------------------------------------------ #
+
+  # Writes the service account key to a temp file and yields the file path.
+  # Cleans up the file after the block completes.
+  def with_gcp_credentials_file
+    raise "GCP service account not configured" unless gcp_service_account_key.present?
+    file = Tempfile.new([ "gcp-sa-#{id}", ".json" ])
+    file.write(gcp_service_account_key)
+    file.flush
+    yield file.path
+  ensure
+    file&.close
+    file&.unlink
   end
 
   private
 
-  def refresh_google_access_token
-    response = Faraday.post("https://oauth2.googleapis.com/token") do |req|
-      req.body = {
-        client_id:     ENV["GOOGLE_CLIENT_ID"] || Rails.application.credentials.dig(:google, :client_id),
-        client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
-        refresh_token: google_refresh_token,
-        grant_type:    "refresh_token"
-      }
-    end
+  def reset_quota_if_needed!
+    now = Time.current
+    return unless quota_reset_at.nil? || now > quota_reset_at
 
-    data = JSON.parse(response.body)
-    update!(
-      google_access_token:     data["access_token"],
-      google_token_expires_at: Time.current + data["expires_in"].to_i.seconds
+    reset_at = now.beginning_of_day + 1.day
+    update_columns(
+      deployments_today:      0,
+      deployments_this_month: now.day == 1 ? 0 : deployments_this_month,
+      quota_reset_at:         reset_at
     )
-    data["access_token"]
   end
 end

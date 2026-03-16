@@ -5,12 +5,10 @@ google_secret = ENV["GOOGLE_CLIENT_SECRET"].presence || Rails.application.creden
 
 # Validate at server boot (not during asset precompile / rake tasks)
 Rails.application.config.after_initialize do
-  next if defined?(Rake)  # skip during assets:precompile and other rake tasks
+  next if defined?(Rake)
   if Rails.env.production? || Rails.env.development?
     raise "GITHUB_CLIENT_ID is not set"     if ENV["GITHUB_CLIENT_ID"].blank?
     raise "GITHUB_CLIENT_SECRET is not set" if ENV["GITHUB_CLIENT_SECRET"].blank?
-    raise "GOOGLE_CLIENT_ID is not set"     if ENV["GOOGLE_CLIENT_ID"].blank?
-    raise "GOOGLE_CLIENT_SECRET is not set" if ENV["GOOGLE_CLIENT_SECRET"].blank?
   end
 end
 
@@ -23,9 +21,9 @@ Rails.application.config.middleware.use OmniAuth::Builder do
   provider :google_oauth2,
            google_id,
            google_secret,
-           scope: "email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/cloudplatformprojects.readonly",
+           scope: "email https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/cloudplatformprojects.readonly",
            access_type: "offline",
-           prompt: "consent",
+           prompt: "consent select_account",
            include_granted_scopes: true
 end
 

@@ -8,10 +8,13 @@ module Deployments
   #   - Hand off to BuildImageJob
   #
   class PrepareJob < BaseJob
+    # Repositories larger than this are rejected before cloning.
+    REPO_SIZE_LIMIT_KB = 500_000  # 500 MB
+
     def perform(deployment_id)
       catch(:skip) do
         with_deployment(deployment_id) do |deployment|
-          guard_status!(deployment, "pending")
+          guard_status!(deployment, "queued", "pending")
 
           project    = deployment.project
           repository = project.repository
@@ -19,15 +22,16 @@ module Deployments
           deployment.transition_to!("analyzing")
           deployment.append_log("Analyzing repository…")
 
-          deployment.transition_to!("cloning")
+          guard_repo_size!(deployment, repository)
+
           deployment.append_log("Cloning #{repository.full_name} @ #{branch(project)}...")
 
           repo_path = clone_repository(deployment, project, repository)
 
-          deployment.transition_to!("detecting")
           deployment.append_log("Detecting framework...")
 
           detection = detect_framework(deployment, repo_path, project)
+          build_deployment_plan(deployment, project, detection, repo_path)
           generate_dockerfile(deployment, repo_path, detection)
 
           deployment.append_log("Preparation complete. Queuing container build.")
@@ -102,6 +106,25 @@ module Deployments
       end
     end
 
+    def build_deployment_plan(deployment, project, detection, repo_path)
+      analysis = project.analysis_result.presence || {
+        "framework" => detection.framework,
+        "runtime" => detection.runtime,
+        "port" => detection.port,
+        "has_dockerfile" => File.exist?(File.join(repo_path, "Dockerfile")),
+        "detected_env_vars" => []
+      }
+
+      plan = Deployments::PlanBuilder.new(
+        project: project,
+        analysis_result: analysis,
+        user: project.user
+      ).call
+
+      deployment.update!(deployment_plan: plan)
+      deployment.append_log("Deployment plan ready (readiness #{plan['deployment_readiness']}%).")
+    end
+
     # ------------------------------------------------------------------ #
     # Shell helpers                                                        #
     # ------------------------------------------------------------------ #
@@ -133,6 +156,16 @@ module Deployments
       out = `git -C #{Shellwords.escape(repo_path)} #{args} 2>&1`
       raise Deployments::DeploymentError, "git #{args} failed: #{out}" unless $?.success?
       out
+    end
+
+    def guard_repo_size!(deployment, repository)
+      size_kb = repository.size_kb.to_i
+      return if size_kb.zero?  # size unknown — allow through
+      return if size_kb <= REPO_SIZE_LIMIT_KB
+
+      raise Deployments::DeploymentError,
+            "Repository is too large to deploy (#{(size_kb / 1024.0).round(1)} MB). " \
+            "Maximum allowed size is #{REPO_SIZE_LIMIT_KB / 1024} MB."
     end
 
     def branch(project)
