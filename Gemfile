@@ -27,7 +27,7 @@ gem "attr_encrypted", "~> 4.0"
 
 # Google Cloud APIs
 gem "google-apis-run_v2",          "~> 0.110"
-gem "google-apis-cloudbuild_v1",   "~> 0.1"
+gem "google-apis-cloudbuild_v1",   "~> 0.79"
 gem "googleauth",                  "~> 1.0"
 
 # HTTP client (GitHub API calls, webhooks)
