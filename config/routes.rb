@@ -21,6 +21,9 @@ Rails.application.routes.draw do
     member do
       post :deploy
       post :analyze
+      get  :setup_cicd
+      post :generate_cicd
+      post :commit_cicd
     end
     resources :deployments, only: %i[index show create] do
       member do

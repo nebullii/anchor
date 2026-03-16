@@ -1,0 +1,156 @@
+<%# Turbo Stream target: "cicd_setup_panel"
+    Rendered inline on setup_cicd page and broadcast from SetupCicdJob.
+    locals: project, cicd_result (Ai::CicdGenerator::Result | nil), status_message (String | nil) %>
+
+<div id="cicd_setup_panel">
+
+  <%# ── Scanning / generating state ──────────────────────────── %>
+  <% if project.cicd_scanning? %>
+    <div class="rounded-xl border border-indigo-800/50 bg-indigo-950/30 p-6">
+      <div class="flex items-center gap-3 mb-2">
+        <svg class="w-5 h-5 text-indigo-400 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        <p class="text-sm font-medium text-indigo-300">
+          <%= status_message.presence || "AI is scanning your repository…" %>
+        </p>
+      </div>
+      <p class="text-xs text-indigo-500 pl-8">
+        Claude is reading your code to generate a tailored Dockerfile and GitHub Actions workflow.
+        This usually takes 20–40 seconds.
+      </p>
+    </div>
+
+  <%# ── Failed state ──────────────────────────────────────────── %>
+  <% elsif project.cicd_failed? %>
+    <div class="rounded-xl border border-red-800/50 bg-red-950/20 p-5">
+      <p class="text-sm font-medium text-red-300 mb-1">Generation failed</p>
+      <p class="text-xs text-red-400 font-mono mb-4"><%= project.cicd_setup_error %></p>
+      <%= button_to "Try again",
+            generate_cicd_project_path(project),
+            method: :post,
+            class: "text-xs bg-red-900/50 hover:bg-red-900 border border-red-700 text-red-200 px-3 py-1.5 rounded transition-colors" %>
+    </div>
+
+  <%# ── Ready: show generated files preview ──────────────────── %>
+  <% elsif project.cicd_ready? && project.cicd_files.any? %>
+    <% files    = project.cicd_files %>
+    <% secrets  = cicd_result&.required_secrets || [] %>
+
+    <%# GitHub secrets checklist %>
+    <% if secrets.any? %>
+      <div class="rounded-xl border border-amber-800/40 bg-amber-950/20 p-5 mb-4">
+        <h3 class="text-sm font-semibold text-amber-300 mb-1">
+          Add these secrets to your GitHub repository
+        </h3>
+        <p class="text-xs text-amber-500 mb-3">
+          Go to <strong class="text-amber-400"><%= project.repository.full_name %></strong> →
+          Settings → Secrets and variables → Actions → New repository secret.
+        </p>
+        <div class="space-y-2">
+          <% secrets.each do |secret| %>
+            <div class="flex items-start gap-3 p-2.5 rounded-lg bg-amber-950/40 border border-amber-900/40">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <code class="text-xs font-mono text-amber-200 font-bold"><%= secret["key"] %></code>
+                  <% if secret["required"] %>
+                    <span class="text-xs text-amber-500">required</span>
+                  <% end %>
+                </div>
+                <p class="text-xs text-amber-600 mt-0.5"><%= secret["description"] %></p>
+                <% if secret["example"].present? %>
+                  <p class="text-xs text-amber-700 italic mt-0.5">e.g. <%= secret["example"] %></p>
+                <% end %>
+              </div>
+              <a href="https://github.com/<%= project.repository.full_name %>/settings/secrets/actions/new"
+                 target="_blank" rel="noopener"
+                 class="flex-shrink-0 text-xs text-amber-400 hover:text-amber-300 border border-amber-800 px-2 py-1 rounded transition-colors mt-0.5">
+                Add ↗
+              </a>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <%# Generated files preview %>
+    <div class="space-y-3 mb-4">
+      <% files.each do |file| %>
+        <div class="rounded-xl border border-gray-800 overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 bg-gray-900 border-b border-gray-800">
+            <div>
+              <code class="text-xs font-mono text-gray-200"><%= file["path"] %></code>
+              <% if file["description"].present? %>
+                <span class="text-xs text-gray-500 ml-2">— <%= file["description"] %></span>
+              <% end %>
+            </div>
+          </div>
+          <pre class="text-xs text-gray-300 p-4 overflow-x-auto max-h-64 leading-relaxed bg-gray-950"><code><%= file["content"] %></code></pre>
+        </div>
+      <% end %>
+    </div>
+
+    <%# Commit action %>
+    <div class="flex items-center gap-3">
+      <%= button_to "Commit #{files.size} file(s) to #{project.repository.full_name}",
+            commit_cicd_project_path(project),
+            method: :post,
+            class: "flex-1 text-center text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg transition-colors" %>
+      <%= button_to "Regenerate",
+            generate_cicd_project_path(project),
+            method: :post,
+            class: "text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-4 py-2.5 rounded-lg transition-colors" %>
+    </div>
+
+  <%# ── Committed state ───────────────────────────────────────── %>
+  <% elsif project.cicd_committed? %>
+    <div class="rounded-xl border border-emerald-800/50 bg-emerald-950/20 p-5">
+      <div class="flex items-center gap-2 mb-2">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+        <p class="text-sm font-medium text-emerald-300">CI/CD configured</p>
+        <% if project.cicd_committed_at %>
+          <span class="text-xs text-emerald-700"><%= time_ago_in_words(project.cicd_committed_at) %> ago</span>
+        <% end %>
+      </div>
+      <p class="text-xs text-emerald-600 mb-4">
+        Deployment files committed to <strong class="text-emerald-500"><%= project.repository.full_name %></strong>.
+        Push to <code class="font-mono"><%= project.production_branch %></code> to trigger a deployment.
+      </p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <a href="https://github.com/<%= project.repository.full_name %>/actions"
+           target="_blank" rel="noopener"
+           class="text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-800 px-3 py-1.5 rounded transition-colors">
+          View Actions ↗
+        </a>
+        <%= button_to "Reconfigure",
+              generate_cicd_project_path(project),
+              method: :post,
+              class: "text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded transition-colors" %>
+      </div>
+    </div>
+
+  <%# ── Initial state ─────────────────────────────────────────── %>
+  <% else %>
+    <div class="rounded-xl border border-gray-800 p-5 text-center">
+      <div class="w-10 h-10 rounded-full bg-indigo-950/50 border border-indigo-800/40 flex items-center justify-center mx-auto mb-3">
+        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </div>
+      <p class="text-sm text-gray-300 font-medium mb-1">Generate deployment files</p>
+      <p class="text-xs text-gray-500 mb-4">
+        Claude will scan your repository and create a Dockerfile and GitHub Actions workflow
+        tailored to your stack.
+      </p>
+      <%= button_to "Scan & Generate",
+            generate_cicd_project_path(project),
+            method: :post,
+            class: "text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg transition-colors" %>
+    </div>
+  <% end %>
+
+</div>
