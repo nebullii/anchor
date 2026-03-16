@@ -25,7 +25,7 @@ class AuthController < ApplicationController
       google_token_expires_at: Time.at(auth.credentials.expires_at)
     )
 
-    redirect_to settings_path, notice: "Google Cloud connected as #{auth.info.email}."
+    redirect_to gcp_projects_path, notice: "Google connected. Now select your GCP project."
   rescue => e
     Rails.logger.error("Google OAuth callback error: #{e.message}")
     redirect_to settings_path, alert: "Failed to connect Google Cloud. Please try again."

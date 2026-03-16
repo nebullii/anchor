@@ -33,6 +33,10 @@ Rails.application.routes.draw do
     resources :secrets,     only: %i[index create destroy]
   end
 
+  namespace :gcp do
+    resources :projects, only: %i[index create]
+  end
+
   resources :repositories, only: %i[index create] do
     collection do
       post :sync
