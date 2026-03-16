@@ -58,7 +58,7 @@ class Project < ApplicationRecord
   end
 
   def last_successful_deployment
-    deployments.where(status: "success").order(created_at: :desc).first
+    deployments.successful.order(created_at: :desc).first
   end
 
   # Collect env vars as a hash to pass to Cloud Run.

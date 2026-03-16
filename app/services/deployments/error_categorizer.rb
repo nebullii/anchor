@@ -32,6 +32,12 @@ module Deployments
       HINTS.fetch(category, "Check the deployment logs for more details.")
     end
 
+    def self.extract_missing_env_var(error_message)
+      return nil if error_message.blank?
+      candidates = error_message.scan(/\b([A-Z][A-Z0-9_]{2,})\b/).flatten
+      candidates.find { |key| key.match?(/_/) && key != "RAILS_ENV" }
+    end
+
     HINTS = {
       "auth_error"         => "The GCP service account may be missing required IAM roles. " \
                                "Ensure it has Cloud Run Admin, Cloud Build Editor, and Artifact Registry Writer roles.",
