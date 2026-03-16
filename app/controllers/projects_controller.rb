@@ -1,5 +1,5 @@
 class ProjectsController < ApplicationController
-  before_action :set_project, only: %i[show edit update destroy deploy analyze]
+  before_action :set_project, only: %i[show edit update destroy deploy analyze setup_cicd generate_cicd commit_cicd]
 
   def index
     @projects = current_user.projects.includes(:repository, :deployments).ordered
@@ -105,6 +105,72 @@ class ProjectsController < ApplicationController
         redirect_to project_deployment_path(@project, @deployment),
                     notice: "Deployment started."
       end
+    end
+  end
+
+  # GET /projects/:id/setup_cicd
+  def setup_cicd
+    # Reset to 'none' if coming back after a failure or to restart
+    if params[:restart].present?
+      @project.update_columns(cicd_setup_status: "none", cicd_setup_error: nil, cicd_files: [])
+    end
+  end
+
+  # POST /projects/:id/generate_cicd
+  # Starts the AI scanning job. Returns Turbo Stream to update the panel.
+  def generate_cicd
+    if @project.cicd_scanning?
+      return redirect_to setup_cicd_project_path(@project), alert: "Already scanning."
+    end
+
+    @project.update_columns(cicd_setup_status: "scanning", cicd_setup_error: nil, cicd_files: [])
+    Projects::SetupCicdJob.perform_later(@project.id)
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          "cicd_setup_panel",
+          partial: "projects/cicd_setup_panel",
+          locals:  { project: @project, cicd_result: nil, status_message: "Cloning repository and scanning with AI…" }
+        )
+      end
+      format.html { redirect_to setup_cicd_project_path(@project) }
+    end
+  end
+
+  # POST /projects/:id/commit_cicd
+  # Commits the generated files to the user's GitHub repo.
+  def commit_cicd
+    unless @project.cicd_ready? && @project.cicd_files.any?
+      return redirect_to setup_cicd_project_path(@project),
+                         alert: "No files ready to commit. Please generate first."
+    end
+
+    files_to_commit = @project.cicd_files.map do |f|
+      {
+        path:    f["path"],
+        content: f["content"],
+        message: "chore: add #{f['path']} via Anchor CI/CD setup"
+      }
+    end
+
+    result = Github::FileCommitter.new(
+      user:           current_user,
+      repo_full_name: @project.repository.full_name,
+      branch:         @project.production_branch,
+      files:          files_to_commit
+    ).call
+
+    if result.success?
+      @project.update_columns(
+        cicd_setup_status: "committed",
+        cicd_committed_at: Time.current
+      )
+      redirect_to setup_cicd_project_path(@project),
+                  notice: "#{result.committed_files.size} file(s) committed to #{@project.repository.full_name}."
+    else
+      redirect_to setup_cicd_project_path(@project),
+                  alert: "Failed to commit files: #{result.error}"
     end
   end
 

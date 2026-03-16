@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_11_100004) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_16_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -68,7 +68,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_100004) do
     t.index ["error_category"], name: "index_deployments_on_error_category"
     t.index ["project_id", "status"], name: "index_deployments_on_project_id_and_status"
     t.index ["project_id"], name: "index_deployments_on_project_id"
-    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text <> ALL ((ARRAY['success'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[]))"
+    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text <> ALL (ARRAY[('success'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text]))"
     t.index ["status"], name: "index_deployments_on_status"
     t.index ["triggered_by"], name: "index_deployments_on_triggered_by"
   end
@@ -78,6 +78,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_11_100004) do
     t.string "analysis_status", default: "pending", null: false
     t.datetime "analyzed_at"
     t.boolean "auto_deploy", default: false, null: false
+    t.datetime "cicd_committed_at"
+    t.jsonb "cicd_files", default: []
+    t.text "cicd_setup_error"
+    t.string "cicd_setup_status", default: "none", null: false
     t.datetime "created_at", null: false
     t.string "framework"
     t.string "gcp_project_id", null: false
