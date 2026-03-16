@@ -1,35 +1,270 @@
-<% content_for :title, "Dashboard — Anchor" %>
+<% content_for :title, "Anchor — Deploy to Cloud Run in seconds" %>
 
 <% unless logged_in? %>
-  <%# ── Landing page for signed-out users ───────────────────── %>
-  <div class="flex flex-col items-center justify-center min-h-[60vh] text-center">
-    <div class="mb-6 flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 ring-1 ring-indigo-500/30">
-      <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
-      </svg>
+
+  <%# ── Hero ─────────────────────────────────────────────────────────── %>
+  <section class="pt-16 pb-20 text-center">
+    <div class="inline-flex items-center gap-2 border border-[var(--anchor-border)] rounded-full px-3 py-1 text-xs text-[var(--anchor-muted)] mb-8">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+      Zero config deploys
     </div>
-    <h1 class="text-4xl font-bold text-white mb-3">Deploy to Google Cloud Run</h1>
-    <p class="text-gray-400 text-lg max-w-md mb-8">
-      Connect a GitHub repository and Anchor handles the rest — framework detection,
-      Docker build, and Cloud Run deployment.
+
+    <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-[var(--anchor-text)] mb-6 leading-tight">
+      GitHub to production.<br>
+      <span class="text-[var(--anchor-muted)]">Without the setup.</span>
+    </h1>
+
+    <p class="text-lg text-[var(--anchor-muted)] max-w-2xl mx-auto mb-10 leading-relaxed">
+      Anchor detects your framework, generates a Dockerfile if you don't have one,
+      builds and deploys your app — with live logs streaming to your browser
+      the entire time.
     </p>
+
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+      <%= button_to "/auth/github", data: { turbo: false },
+            class: "inline-flex items-center gap-2.5 font-semibold text-sm px-6 py-3 rounded-lg transition-colors cursor-pointer",
+            style: "background: var(--anchor-accent); color: var(--anchor-bg-1);" do %>
+        <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
+        </svg>
+        Sign in with GitHub — it's free
+      <% end %>
+    </div>
+  </section>
+
+  <%# ── Divider ─────────────────────────────────────────────────────── %>
+  <div class="border-t border-[var(--anchor-border)]"></div>
+
+  <%# ── How it works ────────────────────────────────────────────────── %>
+  <section class="py-16">
+    <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-12">How it works</p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-[var(--anchor-border)]">
+      <% [
+        ["01", "Connect GitHub", "Sign in with OAuth. Anchor reads your repositories — no configuration needed."],
+        ["02", "Pick a repo", "Choose any repository. Anchor detects the framework, runtime, and port automatically."],
+        ["03", "Add env vars", "Set secrets once. They're encrypted at rest and injected into Cloud Run at deploy time."],
+        ["04", "Deploy", "Click Deploy. Watch the build log stream live. Get a public URL when it's done."]
+      ].each do |num, title, desc| %>
+        <div class="bg-[var(--anchor-bg-1)] p-8">
+          <p class="text-3xl font-bold text-[var(--anchor-border)] mb-4 font-mono"><%= num %></p>
+          <h3 class="text-sm font-semibold text-[var(--anchor-text)] mb-2"><%= title %></h3>
+          <p class="text-sm text-[var(--anchor-muted)] leading-relaxed"><%= desc %></p>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <%# ── Divider ─────────────────────────────────────────────────────── %>
+  <div class="border-t border-[var(--anchor-border)]"></div>
+
+  <%# ── Features ────────────────────────────────────────────────────── %>
+  <section class="py-16">
+    <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-12">What Anchor handles</p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <% [
+        [
+          "Framework detection",
+          "Rails, Node, Next.js, Python, Go, Elixir, Bun, Django, FastAPI, Flask, static sites — detected from your repo's files, not configuration.",
+          "M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v10m0 0h10m-10 0a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m12 6h4a2 2 0 002-2v-4m0 0H9"
+        ],
+        [
+          "Dockerfile generation",
+          "No Dockerfile? No problem. Anchor generates one from a hardcoded template — Ruby version, Node version, Python entry point all included.",
+          "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+        ],
+        [
+          "Live log streaming",
+          "Every build and deploy step streams to your browser in real time over ActionCable. No polling, no refresh.",
+          "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        ],
+        [
+          "AI error explanation",
+          "When a deploy fails, Claude reads the last 100 log lines and explains what went wrong in plain English — and what to do about it.",
+          "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+        ],
+        [
+          "Encrypted secrets",
+          "Environment variables are encrypted at rest with AES-256-CBC. They're never logged, never exposed in URLs, and injected at deploy time only.",
+          "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+        ],
+        [
+          "Cloud provisioning",
+          "Anchor provisions the required cloud infrastructure on first deploy — registries, APIs, and compute targets — so you never touch the cloud console manually.",
+          "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+        ]
+      ].each do |title, desc, icon_path| %>
+        <div class="border border-[var(--anchor-border)] rounded-xl p-6">
+          <div class="w-8 h-8 rounded-lg border border-[var(--anchor-border)] flex items-center justify-center mb-4">
+            <svg class="w-4 h-4 text-[var(--anchor-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="<%= icon_path %>"/>
+            </svg>
+          </div>
+          <h3 class="text-sm font-semibold text-[var(--anchor-text)] mb-2"><%= title %></h3>
+          <p class="text-sm text-[var(--anchor-muted)] leading-relaxed"><%= desc %></p>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <%# ── Divider ─────────────────────────────────────────────────────── %>
+  <div class="border-t border-[var(--anchor-border)]"></div>
+
+  <%# ── Frameworks ──────────────────────────────────────────────────── %>
+  <section class="py-16">
+    <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-8">Supported frameworks</p>
+    <div class="flex flex-wrap justify-center gap-2">
+      <% %w[Rails Node.js Next.js Bun Python FastAPI Flask Django Go Elixir Static Docker].each do |fw| %>
+        <span class="px-3 py-1.5 rounded-lg border border-[var(--anchor-border)] text-xs font-mono text-[var(--anchor-muted)]"><%= fw %></span>
+      <% end %>
+    </div>
+  </section>
+
+  <%# ── Cloud providers ────────────────────────────────────────────── %>
+  <section class="py-16 border-t border-[var(--anchor-border)]">
+    <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-3">Cloud providers</p>
+    <p class="text-sm text-[var(--anchor-muted)] text-center mb-10 max-w-lg mx-auto">
+      Currently on Google Cloud Run. Soon, Anchor picks the best free tier across every major cloud — automatically.
+    </p>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 max-w-4xl mx-auto">
+
+      <%# Google Cloud — Live %>
+      <div class="relative border-2 border-emerald-700/50 bg-emerald-950/10 rounded-xl p-4 flex flex-col items-center gap-3">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-emerald-400 bg-[var(--anchor-bg-1)] px-2 border border-emerald-700/50 rounded-full whitespace-nowrap">Live</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <path d="M24 9.6c3.36 0 6.4 1.12 8.8 2.96l3.52-3.52C33.6 6.72 29.04 4.8 24 4.8 16.32 4.8 9.84 9.44 7.04 16l4.32 3.36C13.12 13.68 18.08 9.6 24 9.6z" fill="#EA4335"/>
+          <path d="M43.2 24c0-1.12-.1-2.24-.28-3.2H24v6.08h10.88c-.48 2.48-1.92 4.56-4.08 5.92l3.6 2.8C37.76 32.96 43.2 29.04 43.2 24z" fill="#4285F4"/>
+          <path d="M11.36 28.64A14.2 14.2 0 0110.4 24c0-1.6.28-3.12.8-4.56L7.04 16A19.14 19.14 0 004.8 24c0 2.88.64 5.6 1.76 8.08l4.8-3.44z" fill="#FBBC05"/>
+          <path d="M24 38.4c4.24 0 7.84-1.44 10.48-3.84l-3.6-2.8c-1.44.96-3.28 1.52-6.88 1.52-5.92 0-10.88-4.08-12.64-9.6l-4.8 3.44C9.84 33.76 16.32 38.4 24 38.4z" fill="#34A853"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Google Cloud</span>
+      </div>
+
+      <%# AWS %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <path d="M14 27.5c0 .5.06.9.16 1.14.1.24.28.5.52.74.08.08.1.18.1.26 0 .12-.08.24-.24.36l-.8.52c-.1.08-.2.1-.3.1-.12 0-.24-.06-.36-.16-.16-.16-.3-.34-.42-.54-.12-.2-.24-.42-.36-.68-.9 1.08-2.04 1.62-3.4 1.62-.98 0-1.76-.28-2.32-.84-.56-.56-.84-1.3-.84-2.2 0-.98.34-1.76 1.04-2.34.7-.58 1.62-.88 2.8-.88.38 0 .78.04 1.2.1.42.06.84.14 1.28.24v-.78c0-.86-.18-1.46-.52-1.82-.36-.36-.98-.52-1.86-.52-.4 0-.8.04-1.22.14-.42.1-.84.24-1.24.42-.18.08-.3.12-.38.14-.08.02-.14.04-.2.04-.16 0-.24-.12-.24-.36v-.56c0-.2.02-.34.08-.42.06-.08.16-.16.32-.24.4-.2.88-.36 1.42-.5.54-.12 1.1-.18 1.7-.18 1.3 0 2.24.3 2.82.9.58.58.88 1.48.88 2.66v3.5zm-4.7 1.76c.38 0 .76-.06 1.14-.2.38-.14.72-.38 1-.72.18-.2.3-.42.36-.68.06-.26.1-.56.1-.9v-.44a10.3 10.3 0 00-1.04-.14 9.8 9.8 0 00-1.02-.06c-.72 0-1.24.14-1.6.44-.36.3-.54.72-.54 1.28 0 .52.14.9.4 1.18.28.16.64.24 1.2.24zm8.66 1.18c-.2 0-.34-.04-.42-.12-.08-.06-.16-.22-.24-.44l-2.68-8.84c-.08-.22-.12-.38-.12-.46 0-.2.08-.3.28-.3h1.12c.22 0 .36.02.44.1.08.06.16.22.22.44l1.92 7.54 1.78-7.54c.06-.22.14-.38.22-.44.08-.08.24-.1.44-.1h.92c.22 0 .36.02.44.1.08.06.16.22.22.44l1.8 7.64 1.96-7.64c.06-.22.14-.38.22-.44.08-.08.22-.1.44-.1h1.06c.2 0 .3.1.3.3 0 .06 0 .14-.02.22-.02.08-.06.2-.12.34l-2.74 8.84c-.08.22-.16.38-.24.44-.08.08-.22.12-.42.12h-.98c-.22 0-.36-.04-.44-.12-.08-.08-.16-.22-.22-.44l-1.78-7.3-1.78 7.3c-.08.22-.14.36-.22.44-.08.08-.22.12-.42.12h-.98zm14.7.3c-.58 0-1.18-.06-1.74-.22-.56-.14-1-.3-1.28-.48-.2-.1-.3-.22-.36-.34a.78.78 0 01-.08-.32v-.58c0-.26.08-.38.28-.38.06 0 .14.02.22.06l.28.14c.36.16.76.3 1.18.38.42.1.84.14 1.26.14.7 0 1.24-.12 1.6-.38.36-.24.56-.6.56-1.06 0-.3-.1-.56-.28-.78-.18-.22-.54-.42-1.02-.58l-1.46-.46c-.72-.22-1.26-.56-1.6-1-.34-.44-.5-.94-.5-1.48 0-.42.1-.8.28-1.14.18-.34.44-.62.76-.84.32-.22.68-.4 1.08-.5.4-.12.82-.16 1.26-.16.22 0 .44.02.68.06.22.02.44.06.64.1.2.06.38.12.56.18.18.06.32.12.42.2.14.08.24.16.3.28.06.1.08.24.08.42v.54c0 .24-.08.38-.28.38-.08 0-.22-.04-.42-.14a5.06 5.06 0 00-2.08-.42c-.62 0-1.1.1-1.42.3-.32.2-.48.5-.48.96 0 .3.1.56.32.76.2.22.56.42 1.06.58l1.42.46c.72.22 1.24.54 1.54.98.3.42.46.9.46 1.42 0 .44-.08.84-.28 1.2-.18.36-.44.68-.76.94-.34.26-.72.44-1.18.58-.46.14-.96.2-1.52.2z" fill="#FF9900"/>
+          <path d="M37.1 33.7c-3.3 2.46-8.12 3.76-12.26 3.76-5.8 0-11.02-2.16-14.96-5.74-.3-.28-.02-.66.34-.44 4.26 2.48 9.52 3.98 14.94 3.98 3.66 0 7.68-.76 11.4-2.34.56-.24 1.02.36.54.78z" fill="#FF9900"/>
+          <path d="M38.5 32.12c-.42-.56-2.8-.26-3.86-.14-.3.04-.36-.24-.08-.44 1.9-1.34 5-1 5.38-.52.36.46-.1 3.58-1.88 5.08-.28.22-.52.1-.4-.18.38-1.02 1.26-3.24.84-3.8z" fill="#FF9900"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">AWS</span>
+      </div>
+
+      <%# Azure %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22.1 6h-9.3L4 35.1h8.4l4.8-6.3L22.1 6z" fill="#0078D4"/>
+          <path d="M22.1 6l5.8 13.5L18 32.4l16.4 5.2H44L27.2 6H22.1z" fill="#0078D4"/>
+          <path d="M4 35.1l8.4-.1 4.8-6.3 9-10.2L18 32.4l-3.4 8.3H4v-5.6z" fill="#005BA1"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Azure</span>
+      </div>
+
+      <%# DigitalOcean %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="24" cy="20" r="12" fill="#0080FF"/>
+          <circle cx="24" cy="20" r="6.5" fill="white"/>
+          <circle cx="24" cy="20" r="3" fill="#0080FF"/>
+          <rect x="6" y="32" width="9" height="3.5" rx="1.75" fill="#0080FF"/>
+          <rect x="6" y="38" width="6" height="3.5" rx="1.75" fill="#0080FF"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">DigitalOcean</span>
+      </div>
+
+      <%# Hetzner %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="8" fill="#D50C2D"/>
+          <rect x="11" y="11" width="6" height="26" rx="2" fill="white"/>
+          <rect x="11" y="21" width="26" height="6" rx="2" fill="white"/>
+          <rect x="31" y="11" width="6" height="26" rx="2" fill="white"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Hetzner</span>
+      </div>
+
+      <%# Oracle Cloud %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="15" width="40" height="18" rx="9" fill="#F80000"/>
+          <text x="24" y="27" font-family="Arial,sans-serif" font-size="8" font-weight="700" fill="white" text-anchor="middle">ORACLE</text>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Oracle Cloud</span>
+      </div>
+
+      <%# Cloudflare %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <path d="M34 29.5l.7-2.6c.1-.4-.3-.7-.6-.6l-.8.3C32.3 23 29 20.5 25 20.5c-3 0-5.7 1.7-7.1 4.3H17c-2.8 0-5 2.2-5 5 0 .3 0 .5.1.7H34z" fill="#F6821F"/>
+          <path d="M37.5 25.5h-.5c-.7-2.5-3-4.4-5.7-4.4-2.2 0-4.1 1.2-5.1 3H26c-2 0-3.6 1.6-3.6 3.6 0 .1 0 .3.1.4H37.5c.3 0 .5-.2.5-.5v-1.6c0-.3-.2-.5-.5-.5z" fill="#FBAD41"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Cloudflare</span>
+      </div>
+
+      <%# Fly.io %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="8" fill="#7B3FF2"/>
+          <path d="M14 13h20l-4.5 9.5H24l2.5 5h-5l-2.5-5H14V13z" fill="white" opacity="0.95"/>
+          <path d="M16 27.5l4.5 10.5h7l4.5-10.5h-5l-3 7-3-7h-5z" fill="white" opacity="0.75"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Fly.io</span>
+      </div>
+
+      <%# Linode %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="8" fill="#02B159"/>
+          <path d="M13 35V13h5.5v17.5H35V35H13z" fill="white"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Linode</span>
+      </div>
+
+      <%# Vultr %>
+      <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="8" fill="#007BFC"/>
+          <path d="M9 12l10.5 24h9L39 12h-7L24 30.5 16 12H9z" fill="white"/>
+        </svg>
+        <span class="text-xs font-medium text-[var(--anchor-text)] text-center leading-tight">Vultr</span>
+      </div>
+
+    </div>
+  </section>
+
+  <%# ── Final CTA ───────────────────────────────────────────────────── %>
+  <section class="py-16 text-center border-t border-[var(--anchor-border)]">
+    <h2 class="text-3xl font-bold text-[var(--anchor-text)] mb-4">Ready to deploy?</h2>
+    <p class="text-[var(--anchor-muted)] mb-8">Free to use. No credit card. Deploys run in your own cloud account.</p>
     <%= button_to "/auth/github", data: { turbo: false },
-          class: "inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-6 py-3 rounded-lg transition-colors" do %>
-      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          class: "inline-flex items-center gap-2.5 font-semibold text-sm px-6 py-3 rounded-lg transition-colors cursor-pointer",
+          style: "background: var(--anchor-accent); color: var(--anchor-bg-1);" do %>
+      <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
       </svg>
       Sign in with GitHub
     <% end %>
-  </div>
+  </section>
+
 <% else %>
-  <%# ── Authenticated dashboard ──────────────────────────────── %>
-  <div class="flex items-center justify-between mb-8">
+  <%# ── Authenticated dashboard ──────────────────────────────────────── %>
+  <div class="mb-8 flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-white">Dashboard</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Welcome back, <%= current_user.github_login %></p>
+      <h1 class="text-3xl font-semibold tracking-tight">Dashboard</h1>
+      <p class="mt-1 text-sm text-[var(--anchor-muted)]">Welcome back, <%= current_user.github_login %></p>
     </div>
-    <%= link_to new_project_path,
-          class: "inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors" do %>
+    <%= link_to new_project_path, class: "btn-primary" do %>
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
       </svg>
@@ -38,24 +273,21 @@
   </div>
 
   <% if @projects.empty? %>
-    <%# ── Empty state ────────────────────────────────────────── %>
-    <div class="rounded-xl border border-dashed border-gray-800 p-12 text-center">
-      <p class="text-gray-500 text-sm mb-4">No projects yet.</p>
+    <div class="surface-card border-dashed p-12 text-center">
+      <p class="mb-4 text-sm text-[var(--anchor-muted)]">No projects yet.</p>
       <%= link_to "Create your first project", new_project_path,
-            class: "text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-2" %>
+            class: "text-sm font-medium underline underline-offset-2 text-[var(--anchor-text)] hover:text-[var(--anchor-muted)]" %>
     </div>
   <% else %>
-    <%# ── Project grid ───────────────────────────────────────── %>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
       <%= render @projects %>
     </div>
 
-    <%# ── Recent deployments ─────────────────────────────────── %>
     <div>
-      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Recent Deployments</h2>
-      <div class="rounded-xl border border-gray-800 divide-y divide-gray-800 overflow-hidden">
+      <h2 class="section-title mb-4">Recent Deployments</h2>
+      <div class="surface-card divide-y divide-[var(--anchor-border)] overflow-hidden">
         <% if @recent_deployments.empty? %>
-          <p class="px-4 py-6 text-sm text-gray-500 text-center">No deployments yet.</p>
+          <p class="px-4 py-6 text-center text-sm text-[var(--anchor-muted)]">No deployments yet.</p>
         <% else %>
           <% @recent_deployments.each do |deployment| %>
             <%= render "deployments/row", deployment: deployment, show_project: true %>

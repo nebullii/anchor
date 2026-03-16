@@ -3,8 +3,9 @@ class Project < ApplicationRecord
   # Constants                                                            #
   # ------------------------------------------------------------------ #
   STATUSES          = %w[inactive active building error].freeze
-  FRAMEWORKS        = %w[rails node python fastapi flask django nextjs static docker unknown].freeze
+  FRAMEWORKS        = %w[rails node python fastapi flask django nextjs static docker go bun elixir unknown].freeze
   ANALYSIS_STATUSES = %w[pending analyzing complete failed].freeze
+  CICD_STATUSES     = %w[none scanning ready committed failed].freeze
   REGIONS    = %w[
     us-central1 us-east1 us-west1
     europe-west1 europe-west2 europe-west3
@@ -39,6 +40,7 @@ class Project < ApplicationRecord
   # ------------------------------------------------------------------ #
   before_validation :set_slug,         on: :create
   before_validation :set_service_name, on: :create
+  after_create      :enqueue_provisioning
 
   # ------------------------------------------------------------------ #
   # Scopes                                                               #
@@ -56,7 +58,7 @@ class Project < ApplicationRecord
   end
 
   def last_successful_deployment
-    deployments.where(status: "success").order(created_at: :desc).first
+    deployments.successful.order(created_at: :desc).first
   end
 
   # Collect env vars as a hash to pass to Cloud Run.
@@ -91,6 +93,31 @@ class Project < ApplicationRecord
     required_keys - existing_keys
   end
 
+  # True if a concurrent active deployment already exists for this project.
+  def has_active_deployment?
+    deployments.in_progress.exists?
+  end
+
+  def cicd_ready?
+    cicd_setup_status == "ready"
+  end
+
+  def cicd_committed?
+    cicd_setup_status == "committed"
+  end
+
+  def cicd_scanning?
+    cicd_setup_status == "scanning"
+  end
+
+  def cicd_failed?
+    cicd_setup_status == "failed"
+  end
+
+  def cicd_configured?
+    cicd_committed? || (cicd_ready? && cicd_files.any?)
+  end
+
   private
 
   def set_slug
@@ -101,6 +128,10 @@ class Project < ApplicationRecord
 
   def set_service_name
     self.service_name ||= "cl-#{slug}"
+  end
+
+  def enqueue_provisioning
+    Gcp::ProvisionProjectJob.perform_later(id)
   end
 
   def unique_slug(base)

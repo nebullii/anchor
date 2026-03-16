@@ -13,6 +13,10 @@ module Deployments
     def with_deployment(deployment_id)
       deployment = Deployment.find(deployment_id)
       yield deployment
+    rescue Deployments::TransientError => e
+      # Transient errors are logged but NOT marked as failed — re-raise for Sidekiq retry.
+      Rails.logger.warn("[#{self.class.name}] Transient error on deployment #{deployment_id}: #{e.message}")
+      raise
     rescue Deployments::DeploymentError => e
       fail_deployment!(deployment, e.message)
     rescue ActiveRecord::RecordNotFound
@@ -37,54 +41,53 @@ module Deployments
     def fail_deployment!(deployment, message)
       return unless deployment
       Rails.logger.error("[#{self.class.name}] Deployment #{deployment.id} failed: #{message}")
-      deployment.update!(error_message: message)
+      category = Deployments::ErrorCategorizer.categorize(message)
+      deployment.update!(error_message: message, error_category: category)
       deployment.append_log(message, level: "error")
+      hint = Deployments::ErrorCategorizer.user_hint(category)
+      deployment.append_log("Hint: #{hint}", level: "error") if hint.present?
       deployment.transition_to!("failed")
       ExplainErrorJob.perform_later(deployment.id)
     end
 
-    # Returns env vars to inject into every gcloud command.
-    # Prefers the project-scoped service account key when available;
-    # falls back to the user's OAuth access token.
-    def gcloud_env(deployment)
+    # Runs a gcloud command authenticated via OAuth token (preferred) or service account key.
+    def run_gcloud!(cmd, deployment:, source: "system")
       user = deployment.project.user
+
       unless user.google_connected?
         raise Deployments::DeploymentError,
-              "Google Cloud not connected. Please connect your Google account in settings."
+              "Google Cloud not connected. Connect via OAuth or add a service account key in Settings."
       end
 
-      env = { "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1" }
-
-      if user.gcp_configured?
-        key_path = write_service_account_key(deployment)
-        env["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
-      else
-        env["CLOUDSDK_AUTH_ACCESS_TOKEN"] = user.fresh_google_access_token
-      end
-
-      env
-    end
-
-    # Writes the service account JSON key to a temp file for this deployment.
-    # The file is scoped to the deployment so concurrent jobs don't collide.
-    def write_service_account_key(deployment)
-      dir  = "/tmp/cloudlaunch/credentials"
-      path = "#{dir}/#{deployment.id}.json"
-      FileUtils.mkdir_p(dir)
-      File.write(path, deployment.project.user.gcp_service_account_key)
-      path
-    end
-
-    # Runs a shell command with gcloud auth env injected.
-    def run_gcloud!(cmd, deployment:, source: "system")
-      env = gcloud_env(deployment)
       output_lines = []
 
-      IO.popen(env, "#{cmd} 2>&1") do |io|
-        io.each_line do |raw|
-          line = raw.chomp
-          output_lines << line
-          deployment.append_log(line, source: source) if line.present?
+      if user.google_oauth_connected?
+        token = user.fresh_google_token!
+        env = {
+          "CLOUDSDK_AUTH_ACCESS_TOKEN"    => token,
+          "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1"
+        }
+        IO.popen(env, "#{cmd} 2>&1") do |io|
+          io.each_line do |raw|
+            line = raw.chomp
+            output_lines << line
+            deployment.append_log(line, source: source) if line.present?
+          end
+        end
+      else
+        user.with_gcp_credentials_file do |key_path|
+          env = {
+            "GOOGLE_APPLICATION_CREDENTIALS"         => key_path,
+            "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE" => key_path,
+            "CLOUDSDK_CORE_DISABLE_PROMPTS"          => "1"
+          }
+          IO.popen(env, "#{cmd} 2>&1") do |io|
+            io.each_line do |raw|
+              line = raw.chomp
+              output_lines << line
+              deployment.append_log(line, source: source) if line.present?
+            end
+          end
         end
       end
 

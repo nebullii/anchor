@@ -12,7 +12,7 @@ module Deployments
     def perform(deployment_id, repo_path)
       catch(:skip) do
         with_deployment(deployment_id) do |deployment|
-          guard_status!(deployment, "cloning", "detecting")
+          guard_status!(deployment, "analyzing", "cloning", "detecting")
 
           deployment.transition_to!("building")
 
@@ -64,7 +64,7 @@ module Deployments
     def full_image_url(deployment)
       project = deployment.project
       "#{project.gcp_region}-docker.pkg.dev" \
-      "/#{project.gcp_project_id}/cloudlaunch" \
+      "/#{project.gcp_project_id}/anchor" \
       "/#{project.service_name}:#{deployment.id}"
     end
 

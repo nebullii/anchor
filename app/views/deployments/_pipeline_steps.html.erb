@@ -1,14 +1,15 @@
 <%# locals: (deployment:) %>
 <%
   steps = [
-    { key: "cloning",   label: "Clone repository",     icon: "📦" },
-    { key: "detecting", label: "Detect framework",      icon: "🔍" },
-    { key: "building",  label: "Build Docker image",    icon: "🐳" },
-    { key: "deploying", label: "Deploy to Cloud Run",   icon: "🚀" },
-    { key: "success",   label: "Live",                  icon: "✅" },
+    { key: "queued",       label: "Queued",             icon: "1" },
+    { key: "analyzing",    label: "Analyze repo",       icon: "2" },
+    { key: "building",     label: "Build image",        icon: "3" },
+    { key: "deploying",    label: "Deploy service",     icon: "4" },
+    { key: "health_check", label: "Health check",       icon: "5" },
+    { key: "running",      label: "Running",            icon: "6" },
   ]
 
-  order = %w[pending cloning detecting building deploying success failed cancelled]
+  order = %w[queued pending analyzing cloning detecting building deploying health_check running success failed cancelled]
   current_index = order.index(deployment.status) || 0
 
   def step_state(step_key, deployment, order, current_index)

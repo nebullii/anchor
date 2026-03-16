@@ -26,6 +26,15 @@ class FrameworkDetector
         File.exist?(pkg) && JSON.parse(File.read(pkg)).dig("dependencies", "next")
       }
     },
+    # Bun — check before generic node (bun.lockb / bun.lock is the canonical signal)
+    {
+      framework: "bun",
+      runtime:   "bun1",
+      port:      3000,
+      check:     ->(path) {
+        File.exist?("#{path}/bun.lockb") || File.exist?("#{path}/bun.lock")
+      }
+    },
     {
       framework: "node",
       runtime:   "node20",
@@ -75,6 +84,24 @@ class FrameworkDetector
           File.exist?("#{path}/setup.py")
       }
     },
+    # Go — check before static
+    {
+      framework: "go",
+      runtime:   "go1.22",
+      port:      8080,
+      check:     ->(path) {
+        File.exist?("#{path}/go.mod")
+      }
+    },
+    # Elixir / Phoenix
+    {
+      framework: "elixir",
+      runtime:   "elixir1.16",
+      port:      4000,
+      check:     ->(path) {
+        File.exist?("#{path}/mix.exs")
+      }
+    },
     # Static — only match when there are no server-side signals
     {
       framework: "static",
@@ -84,7 +111,9 @@ class FrameworkDetector
         File.exist?("#{path}/index.html") &&
           !File.exist?("#{path}/package.json") &&
           !File.exist?("#{path}/requirements.txt") &&
-          !File.exist?("#{path}/Gemfile")
+          !File.exist?("#{path}/Gemfile") &&
+          !File.exist?("#{path}/go.mod") &&
+          !File.exist?("#{path}/mix.exs")
       }
     }
   ].freeze
@@ -170,6 +199,24 @@ class FrameworkDetector
         "has_procfile"     => File.exist?("#{@repo_path}/Procfile"),
         "entry_point"      => detect_python_entry
       }
+    when "go"
+      {
+        "go_version"    => detect_go_version,
+        "module_name"   => detect_go_module,
+        "has_main"      => Dir.glob("#{@repo_path}/**/*.go").any? { |f| File.read(f).include?("func main()") rescue false }
+      }
+    when "bun"
+      pkg = JSON.parse(File.read("#{@repo_path}/package.json")) rescue {}
+      {
+        "start_script"  => pkg.dig("scripts", "start"),
+        "build_script"  => pkg.dig("scripts", "build"),
+        "main"          => pkg["main"]
+      }
+    when "elixir"
+      {
+        "mix_project"  => detect_elixir_app_name,
+        "has_phoenix"  => elixir_phoenix?
+      }
     else
       {}
     end
@@ -233,6 +280,33 @@ class FrameworkDetector
       path = "#{@repo_path}/#{entry}"
       File.exist?(path) && File.read(path).include?("FastAPI")
     end || "main.py"
+  end
+
+  def detect_go_version
+    go_mod = "#{@repo_path}/go.mod"
+    return "1.22" unless File.exist?(go_mod)
+    match = File.read(go_mod).match(/^go\s+(\d+\.\d+)/)
+    match ? match[1] : "1.22"
+  end
+
+  def detect_go_module
+    go_mod = "#{@repo_path}/go.mod"
+    return nil unless File.exist?(go_mod)
+    match = File.read(go_mod).match(/^module\s+(\S+)/)
+    match ? match[1] : nil
+  end
+
+  def detect_elixir_app_name
+    mix = "#{@repo_path}/mix.exs"
+    return nil unless File.exist?(mix)
+    match = File.read(mix).match(/app:\s+:(\w+)/)
+    match ? match[1] : nil
+  end
+
+  def elixir_phoenix?
+    mix = "#{@repo_path}/mix.exs"
+    return false unless File.exist?(mix)
+    File.read(mix).include?("phoenix")
   end
 
   def detect_django_wsgi

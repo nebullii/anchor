@@ -41,11 +41,9 @@ jobs:
       ENCRYPTION_KEY: "00000000000000000000000000000000"
       GITHUB_CLIENT_ID: test
       GITHUB_CLIENT_SECRET: test
-      GOOGLE_CLIENT_ID: test
-      GOOGLE_CLIENT_SECRET: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -62,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: ruby/setup-ruby@v1
         with:
