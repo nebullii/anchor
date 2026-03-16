@@ -1,7 +1,5 @@
 class DashboardController < ApplicationController
-  skip_before_action :require_login, only: [:index, :pricing]
-
-  def pricing; end
+  skip_before_action :require_login, only: [:index]
 
   def index
     return unless logged_in?

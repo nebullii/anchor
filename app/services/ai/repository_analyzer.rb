@@ -94,7 +94,6 @@ module Ai
         Return a JSON object with these keys (all optional — omit keys you have no new info for):
         - "app_description": one-sentence description of what this app does
         - "additional_env_vars": array of {"key","required","source","description"} objects for env vars the deterministic scan missed
-        - "env_var_suggestions": array of {"key","confidence","required","reason"} where confidence is high | possible | review_required
         - "warnings": array of additional deployment warning strings
         - "confidence": "high" | "medium" | "low" — your confidence in the framework detection
         - "framework_notes": brief string if you'd correct or clarify the detected framework
@@ -135,32 +134,7 @@ module Ai
         result["env_vars"] = (result["env_vars"] || []) + new_vars
       end
 
-      if enrichment["env_var_suggestions"].is_a?(Array) && enrichment["env_var_suggestions"].any?
-        result["ai_env_var_suggestions"] = enrichment["env_var_suggestions"]
-          .select { |v| v["key"].present? }
-          .map do |v|
-            {
-              "key" => v["key"].to_s.upcase,
-              "confidence" => normalize_env_confidence(v["confidence"]),
-              "required" => v["required"] == true,
-              "reason" => v["reason"].to_s.presence
-            }
-          end
-          .uniq { |v| v["key"] }
-      end
-
       result
-    end
-
-    def normalize_env_confidence(value)
-      case value.to_s.downcase
-      when "high"
-        "high"
-      when "review_required", "low"
-        "review_required"
-      else
-        "possible"
-      end
     end
   end
 end

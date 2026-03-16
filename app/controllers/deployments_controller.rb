@@ -21,7 +21,7 @@ class DeploymentsController < ApplicationController
 
   def create
     deployment = @project.deployments.create!(
-      status:       "queued",
+      status:       "pending",
       triggered_by: "manual",
       branch:       @project.production_branch
     )

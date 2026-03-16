@@ -6,7 +6,7 @@ class DeploymentJob < ApplicationJob
   def perform(deployment_id)
     deployment = Deployment.find(deployment_id)
 
-    unless %w[queued pending].include?(deployment.status)
+    unless deployment.status == "pending"
       Rails.logger.warn("DeploymentJob: #{deployment_id} already #{deployment.status}, skipping.")
       return
     end
