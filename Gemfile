@@ -20,7 +20,7 @@ gem "redis", "~> 5.0"
 # GitHub OAuth + API
 gem "omniauth-github", "~> 2.0"
 gem "omniauth-rails_csrf_protection"
-gem "octokit", "~> 8.0"
+gem "octokit", "~> 10.0"
 
 # Encryption for tokens and secrets
 gem "attr_encrypted", "~> 4.0"
