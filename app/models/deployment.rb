@@ -2,10 +2,16 @@ class Deployment < ApplicationRecord
   # ------------------------------------------------------------------ #
   # Constants                                                            #
   # ------------------------------------------------------------------ #
-  STATUSES = %w[pending analyzing cloning detecting building deploying success failed cancelled].freeze
+  STATUSES = %w[
+    queued pending
+    analyzing cloning detecting
+    building deploying health_check
+    running success
+    failed cancelled
+  ].freeze
 
-  TERMINAL_STATUSES    = %w[success failed cancelled].freeze
-  IN_PROGRESS_STATUSES = %w[pending analyzing cloning detecting building deploying].freeze
+  TERMINAL_STATUSES    = %w[running success failed cancelled].freeze
+  IN_PROGRESS_STATUSES = %w[queued pending analyzing cloning detecting building deploying health_check].freeze
 
   # ------------------------------------------------------------------ #
   # Associations                                                         #
@@ -25,7 +31,7 @@ class Deployment < ApplicationRecord
   scope :recent,       -> { order(created_at: :desc) }
   scope :in_progress,  -> { where(status: IN_PROGRESS_STATUSES) }
   scope :terminal,     -> { where(status: TERMINAL_STATUSES) }
-  scope :successful,   -> { where(status: "success") }
+  scope :successful,   -> { where(status: %w[running success]) }
   scope :failed,       -> { where(status: "failed") }
 
   # ------------------------------------------------------------------ #
@@ -41,7 +47,7 @@ class Deployment < ApplicationRecord
   end
 
   def success?
-    status == "success"
+    %w[running success].include?(status)
   end
 
   def failed?
@@ -54,7 +60,7 @@ class Deployment < ApplicationRecord
     raise ArgumentError, "Unknown status: #{new_status}" unless STATUSES.include?(new_status.to_s)
 
     attrs = { status: new_status.to_s }
-    attrs[:started_at]  = Time.current if %w[analyzing cloning].include?(new_status.to_s) && started_at.nil?
+    attrs[:started_at]  = Time.current if %w[analyzing cloning queued pending].include?(new_status.to_s) && started_at.nil?
     attrs[:finished_at] = Time.current if TERMINAL_STATUSES.include?(new_status.to_s)
 
     update!(attrs)
@@ -100,9 +106,9 @@ class Deployment < ApplicationRecord
   def sync_project_status!
     new_project_status =
       case status
-      when "success"   then "active"
+      when "running", "success" then "active"
       when "failed"    then "error"
-      when "cancelled" then project.deployments.where(status: "success").exists? ? "active" : "inactive"
+      when "cancelled" then project.deployments.successful.exists? ? "active" : "inactive"
       else                  "building"
       end
 

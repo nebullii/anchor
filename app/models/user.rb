@@ -59,9 +59,50 @@ class User < ApplicationRecord
     name.presence || github_login
   end
 
-  # True when the user has configured a GCP service account key.
+  # True when the user has connected Google Cloud via OAuth OR service account key.
   def google_connected?
-    gcp_service_account_key.present?
+    google_access_token.present? || gcp_service_account_key.present?
+  end
+
+  # True only when connected via OAuth.
+  def google_oauth_connected?
+    google_access_token.present?
+  end
+
+  # Returns a fresh OAuth access token, refreshing it first if expired.
+  # Raises if no OAuth tokens are stored.
+  def fresh_google_token!
+    raise "Google account not connected via OAuth" unless google_refresh_token.present?
+
+    if google_token_expires_at.nil? || google_token_expires_at <= 5.minutes.from_now
+      refresh_google_token!
+    end
+
+    google_access_token
+  end
+
+  # Exchanges the stored refresh token for a new access token.
+  def refresh_google_token!
+    require "signet/oauth_2/client"
+
+    client = Signet::OAuth2::Client.new(
+      token_credential_uri: "https://oauth2.googleapis.com/token",
+      client_id:     ENV["GOOGLE_CLIENT_ID"]     || Rails.application.credentials.dig(:google, :client_id),
+      client_secret: ENV["GOOGLE_CLIENT_SECRET"] || Rails.application.credentials.dig(:google, :client_secret),
+      refresh_token: google_refresh_token
+    )
+    client.refresh!
+
+    update!(
+      google_access_token:     client.access_token,
+      google_token_expires_at: Time.at(client.expires_at)
+    )
+  end
+
+  # The email address of the connected Google account (OAuth), or the
+  # service account email extracted from the JSON key.
+  def connected_google_email
+    google_email.presence || gcp_credentials&.dig("client_email")
   end
 
   # Returns the parsed service account JSON, or nil.
@@ -72,12 +113,7 @@ class User < ApplicationRecord
     nil
   end
 
-  # The service account email extracted from the key, used for display.
-  def gcp_service_account_email
-    gcp_credentials&.dig("client_email")
-  end
-
-  # The GCP project ID extracted from the key.
+  # The GCP project ID extracted from the service account key.
   def gcp_project_from_key
     gcp_credentials&.dig("project_id")
   end

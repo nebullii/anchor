@@ -72,6 +72,23 @@
   <%= render "outcome", deployment: @deployment %>
 </div>
 
+<% if @deployment.deployment_plan.present? %>
+  <div class="mb-6 rounded-xl border border-gray-800 p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Deployment Plan Snapshot</h2>
+      <span class="text-xs <%= @deployment.deployment_plan["deployment_readiness"].to_i >= 85 ? 'text-emerald-400' : 'text-amber-400' %>">
+        <%= @deployment.deployment_plan["deployment_readiness"] %>% ready
+      </span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-300">
+      <p><span class="text-gray-500">Framework:</span> <%= @deployment.deployment_plan["framework"] %></p>
+      <p><span class="text-gray-500">Runtime:</span> <%= @deployment.deployment_plan["runtime"] %></p>
+      <p><span class="text-gray-500">Container:</span> <%= @deployment.deployment_plan["container"] %></p>
+      <p><span class="text-gray-500">Target:</span> <%= @deployment.deployment_plan["target"] %></p>
+    </div>
+  </div>
+<% end %>
+
 <%# ── Log terminal ─────────────────────────────────────────────── %>
 <div data-controller="log"
      data-log-running-value="<%= @deployment.in_progress? %>"
