@@ -1,21 +1,85 @@
 # Anchor
 
-Deploy GitHub repositories to Google Cloud Run from a web UI.
+Deploy any GitHub repository to Google Cloud Run. Anchor handles framework detection, Dockerfile generation, Cloud Build image builds, and Cloud Run deployments — with live log streaming to the browser the entire time.
 
-Anchor handles framework detection, Docker image builds, Cloud Run deployments, and live log streaming — without any manual infrastructure configuration.
+No Kubernetes. No YAML to write. Click Deploy, watch it go.
 
 ---
 
 ## What it does
 
 1. Sign in with GitHub
-2. Connect a repository
+2. Pick a repository
 3. Set environment variables
 4. Click Deploy
-5. Watch the build log stream live in the browser
-6. Get a Cloud Run URL when it's done
+5. Watch the build stream live
+6. Get a Cloud Run URL
 
-Supported frameworks: **Rails, Node.js, Python, static sites**, and any repo with an existing **Dockerfile**.
+Anchor detects your framework, generates a Dockerfile if you don't have one, submits the build to Cloud Build, polls until it finishes, then deploys to Cloud Run and health-checks the service. If anything goes wrong, Claude explains what happened in plain English.
+
+---
+
+## System Design
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Browser                                                            │
+│  Turbo Drive navigation · Turbo Streams (live updates) · Stimulus  │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │ HTTP / WebSocket (ActionCable)
+┌───────────────────────────────▼─────────────────────────────────────┐
+│  Rails 8.1 (Puma / Thrust)                                          │
+│                                                                     │
+│  Auth: GitHub OAuth ──► OmniAuth ──► session[:user_id]             │
+│         Google OAuth ──► OmniAuth ──► user.google_access_token      │
+│                                                                     │
+│  Controllers ──► Sidekiq Jobs ──► gcloud CLI                        │
+│  Turbo Streams ──► ActionCable ──► Redis pub/sub                    │
+└──────┬────────────────────────────────────────┬──────────────────────┘
+       │ PostgreSQL                             │ Redis
+       │ (users, projects,                      │ (Sidekiq queues,
+       │  deployments, logs,                    │  ActionCable,
+       │  secrets)                              │  Rack::Attack)
+       └────────────────────────────────────────┘
+
+Sidekiq Deployment Pipeline (5 jobs, no retries):
+
+DeploymentJob
+  └─ PrepareJob          git clone · detect framework · generate Dockerfile
+      └─ BuildImageJob   gcloud builds submit --async
+          └─ PollBuildStatusJob   polls every 15–60s (exponential backoff, 40 attempts max)
+              └─ DeployToCloudRunJob   gcloud run deploy · health check · save URL
+
+On any failure → ExplainErrorJob (async)
+                  └─ Anthropic Haiku → plain-English explanation → broadcast to browser
+
+GCP per deployment:
+  Cloud Build ──► Artifact Registry ──► Cloud Run
+```
+
+### Data model
+
+```
+User
+├─ has_many :repositories      (GitHub-synced, read from Octokit)
+└─ has_many :projects
+     ├─ has_many :deployments
+     │    └─ has_many :deployment_logs   (append-only, ~200 lines/deploy)
+     └─ has_many :secrets               (encrypted env vars)
+```
+
+All tokens and secrets are encrypted at rest with `attr_encrypted` (AES-256-CBC). The encryption key never touches the database.
+
+### Auth flow
+
+```
+GitHub OAuth  →  sign in, stores github_token (encrypted)
+Google OAuth  →  connects GCP access, stores access + refresh tokens (encrypted)
+               ↕  token auto-refreshed via Signet when < 5 minutes from expiry
+Service Account Key  →  fallback / advanced: JSON pasted in Settings, stored encrypted
+```
+
+Deployments use whichever credential is available: OAuth token via `CLOUDSDK_AUTH_ACCESS_TOKEN`, or service account key written to a temp file for the gcloud subprocess lifetime only.
 
 ---
 
@@ -23,15 +87,42 @@ Supported frameworks: **Rails, Node.js, Python, static sites**, and any repo wit
 
 | Layer | Technology |
 |---|---|
-| Backend | Ruby on Rails 8.1 |
-| Database | PostgreSQL |
-| Background jobs | Sidekiq + Redis |
+| Framework | Ruby on Rails 8.1 |
+| Database | PostgreSQL 15+ |
+| Background jobs | Sidekiq 8 + Redis 7 |
 | Frontend | Hotwire (Turbo + Stimulus) + Tailwind CSS v4 |
-| Auth | GitHub OAuth (OmniAuth) |
-| Build | Google Cloud Build |
-| Deploy target | Google Cloud Run |
-| Image registry | Google Artifact Registry |
+| Real-time | ActionCable over Redis |
+| Auth | OmniAuth (GitHub + Google OAuth2) |
+| GCP APIs | Cloud Build, Cloud Run, Artifact Registry |
+| Token management | Signet (OAuth2 refresh) |
 | Encryption | attr_encrypted (AES-256-CBC) |
+| Rate limiting | Rack::Attack (Redis-backed) |
+| AI features | Anthropic API — claude-haiku-4-5 (optional, gracefully degraded) |
+| Web server | Puma + Thrust (zero-downtime restarts) |
+| Tests | RSpec 7, Factory Bot, Shoulda Matchers, WebMock (260 examples) |
+
+---
+
+## Framework Detection
+
+Anchor inspects the repository root in priority order:
+
+| Framework | Signal | Default port |
+|---|---|---|
+| docker | `Dockerfile` present | 8080 |
+| rails | `Gemfile` contains `rails` | 3000 |
+| nextjs | `package.json` depends on `next` | 3000 |
+| bun | `bun.lockb` or `bun.lock` present | 3000 |
+| node | `package.json` present | 3000 |
+| fastapi | `requirements.txt` contains `fastapi` | 8000 |
+| flask | `requirements.txt` contains `flask` | 5000 |
+| django | `requirements.txt` contains `django` | 8000 |
+| python | `requirements.txt` / `pyproject.toml` | 8000 |
+| go | `go.mod` present | 8080 |
+| elixir | `mix.exs` present | 4000 |
+| static | `index.html` in root | 80 |
+
+If no Dockerfile is found, one is generated from a hardcoded template for the detected framework. Ruby version, Node version, Python entry point, Go module, and Elixir app name are all extracted and threaded into the template.
 
 ---
 
@@ -39,13 +130,13 @@ Supported frameworks: **Rails, Node.js, Python, static sites**, and any repo wit
 
 ### Prerequisites
 
-- Ruby 3.4.4 (`rbenv install 3.4.4`)
+- Ruby 3.4.4
 - PostgreSQL 15+
 - Redis 7+
-- Google Cloud SDK (`gcloud` CLI)
+- `gcloud` CLI on `$PATH`
 - A GitHub OAuth App
 
-### 1. Clone and install
+### Setup
 
 ```bash
 git clone https://github.com/your-org/anchor.git
@@ -53,121 +144,85 @@ cd anchor
 bundle install
 ```
 
-### 2. Create a GitHub OAuth App
-
-Go to [github.com/settings/applications/new](https://github.com/settings/applications/new):
+**Create a GitHub OAuth App** at [github.com/settings/applications/new](https://github.com/settings/applications/new):
 
 | Field | Value |
 |---|---|
-| Application name | Anchor (local) |
 | Homepage URL | `http://localhost:3000` |
 | Authorization callback URL | `http://localhost:3000/auth/github/callback` |
 
-Copy the **Client ID** and **Client Secret**.
-
-### 3. Configure credentials
+**Edit credentials:**
 
 ```bash
 EDITOR="nano" bundle exec rails credentials:edit
 ```
 
-Add:
-
 ```yaml
 github:
-  client_id: "YOUR_CLIENT_ID"
-  client_secret: "YOUR_CLIENT_SECRET"
+  client_id: "YOUR_GITHUB_CLIENT_ID"
+  client_secret: "YOUR_GITHUB_CLIENT_SECRET"
+
+google:
+  client_id: "YOUR_GOOGLE_CLIENT_ID"       # optional — enables Connect Google Cloud
+  client_secret: "YOUR_GOOGLE_CLIENT_SECRET"
 
 encryption:
   key: "32-byte-string-exactly-32-chars!!"
 ```
 
-The encryption key must be exactly 32 bytes. Generate one with:
+Generate a 32-byte encryption key: `ruby -e "require 'securerandom'; puts SecureRandom.hex(16)"`
 
-```bash
-ruby -e "require 'securerandom'; puts SecureRandom.hex(16)"
-```
-
-### 4. Set up the database
+**Database:**
 
 ```bash
 createdb anchor_development
 bundle exec rails db:migrate
 ```
 
-### 5. Authenticate with Google Cloud
-
-```bash
-gcloud auth login
-gcloud auth application-default login
-```
-
-The deployer uses Application Default Credentials. The `gcloud` CLI must be on `$PATH` for Sidekiq workers.
-
-### 6. Start the app
+**Start:**
 
 ```bash
 bin/dev
 ```
 
-This starts three processes via Foreman:
+Three processes via Foreman:
 
 | Process | Command |
 |---|---|
-| `web` | `bin/rails server` on port 3000 |
+| `web` | `bin/rails server -p 3000` |
 | `css` | `bin/rails tailwindcss:watch` |
 | `worker` | `bundle exec sidekiq -C config/sidekiq.yml` |
 
-Visit [http://localhost:3000](http://localhost:3000).
-
 ---
 
-## Environment Variables
+## Google Cloud Setup
 
-### Required at runtime
+Each project deploys into **the user's own GCP project** — not Anchor's. Before a user can deploy, their target GCP project needs these APIs enabled and an Artifact Registry repository created. Anchor's `ProvisionProjectJob` handles this automatically on first project creation.
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection string |
-| `RAILS_MASTER_KEY` | Contents of `config/master.key` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account JSON |
-
-### Optional
-
-| Variable | Default | Description |
-|---|---|---|
-| `RAILS_MAX_THREADS` | `5` | Puma thread count + DB pool size |
-| `SIDEKIQ_CONCURRENCY` | `10` | Sidekiq worker thread count |
-| `RAILS_LOG_TO_STDOUT` | — | Set to `true` in production |
-| `RAILS_SERVE_STATIC_FILES` | — | Set to `true` in production |
-
-Credentials (GitHub OAuth keys, encryption key) live in `config/credentials.yml.enc`, not in environment variables.
-
----
-
-## GCP Setup
-
-Each project deployment runs in **the user's own GCP project** — not Anchor's. Before deploying a project, the target GCP project needs:
-
-### Enable APIs
+To do it manually:
 
 ```bash
-gcloud services enable cloudbuild.googleapis.com --project=YOUR_PROJECT_ID
-gcloud services enable run.googleapis.com --project=YOUR_PROJECT_ID
-gcloud services enable artifactregistry.googleapis.com --project=YOUR_PROJECT_ID
-```
+PROJECT_ID=your-gcp-project-id
 
-### Create Artifact Registry repository
+gcloud services enable \
+  cloudbuild.googleapis.com \
+  run.googleapis.com \
+  artifactregistry.googleapis.com \
+  --project=$PROJECT_ID
 
-```bash
-gcloud artifacts repositories create cloudlaunch \
+gcloud artifacts repositories create anchor \
   --repository-format=docker \
   --location=us-central1 \
-  --project=YOUR_PROJECT_ID
+  --project=$PROJECT_ID
 ```
 
-### Required IAM roles for the service account
+### Connecting Google Cloud
+
+Users connect their GCP account from the Settings page in two ways:
+
+**Option 1 — Google OAuth (recommended):** Click "Connect Google Cloud". Grants `cloud-platform` scope. Access tokens are auto-refreshed via the stored refresh token. No files to manage.
+
+**Option 2 — Service Account Key (advanced):** Paste the JSON key from a service account with these roles:
 
 | Role | Purpose |
 |---|---|
@@ -175,85 +230,36 @@ gcloud artifacts repositories create cloudlaunch \
 | `roles/run.admin` | Create and update Cloud Run services |
 | `roles/artifactregistry.writer` | Push container images |
 | `roles/storage.admin` | Upload source to GCS for Cloud Build |
-| `roles/iam.serviceAccountUser` | Allow Cloud Build to act as runtime SA |
-
-The `scripts/setup_gcloud.sh` script automates these steps.
+| `roles/iam.serviceAccountUser` | Allow Cloud Build to act as the runtime service account |
 
 ---
 
-## Deployment Pipeline
+## Environment Variables
 
-Every deploy runs a 5-job Sidekiq pipeline:
-
-```
-DeploymentJob          validates state, enqueues PrepareJob
-  └─ PrepareJob        git clone → framework detect → generate Dockerfile
-      └─ BuildImageJob gcloud builds submit --async → saves build ID
-          └─ PollBuildStatusJob  polls every 15–60s with backoff (max 40 attempts)
-              └─ DeployToCloudRunJob  gcloud run deploy → saves service URL
-```
-
-**Status transitions:**
-```
-pending → cloning → detecting → building → deploying → success
-                                                      ↘ failed
-                                                      ↘ cancelled
-```
-
-Each transition broadcasts a Turbo Stream that updates the status badge and outcome panel in the browser without a page reload.
-
-### Framework detection
-
-| Framework | Signal | Runtime | Port |
-|---|---|---|---|
-| docker | `Dockerfile` exists | custom | 8080 |
-| rails | `Gemfile` contains "rails" | ruby3.2 | 3000 |
-| node | `package.json` exists | node20 | 3000 |
-| nextjs | `package.json` depends on `next` | node20 | 3000 |
-| fastapi | `requirements.txt` contains `fastapi` | python3.11 | 8000 |
-| flask | `requirements.txt` contains `flask` | python3.11 | 8000 |
-| django | `requirements.txt` contains `django` | python3.11 | 8000 |
-| python | `requirements.txt` or `pyproject.toml` | python3.11 | 8000 |
-| static | `index.html` in root | nginx | 80 |
-
-If no Dockerfile exists, one is generated from a hardcoded template for the detected framework. The generated file is written into the cloned repo before Cloud Build receives the source.
-
----
-
-## AI Layer
-
-Two AI-powered features run on top of the deterministic pipeline, both using `claude-haiku-4-5-20251001` via the Anthropic API. Both degrade gracefully — if `ANTHROPIC_API_KEY` is unset or the API call fails, the deploy continues unchanged.
-
-### Repository analysis enrichment
-
-Before the first deploy, `RepositoryAnalysisJob` clones the repo and runs a two-phase analysis:
-
-1. **Deterministic** (`RepositoryAnalyzer`) — detects framework, runtime, port, likely env vars, database type, and dependency list from file contents
-2. **AI enrichment** (`Ai::RepositoryAnalyzer`) — sends the deterministic result + file tree + README to Claude, which returns:
-   - `app_description` — one-sentence description of what the app does
-   - `additional_env_vars` — env vars the deterministic scan missed
-   - `warnings` — additional deployment warnings
-   - `confidence` — high / medium / low on the framework detection
-   - `framework_notes` — corrections or clarifications to the detected framework
-
-The merged result is cached on the project (`analysis_result` JSONB column) and surfaced in the UI before the user hits Deploy.
-
-### Failure explanation
-
-When a deployment fails, `ExplainErrorJob` fires asynchronously and calls `Ai::ErrorExplainer`, which sends the last 100 log lines and the error message to Claude. The response is a 2–4 sentence plain-English explanation of what went wrong and the most likely fix. It is stored on the deployment record and broadcast to the live log terminal if it's still open.
-
-```
-deploy failed
-  └─ ExplainErrorJob (async, default queue)
-       └─ Ai::ErrorExplainer → Anthropic API (Haiku)
-            └─ explanation stored on deployment + broadcast via ActionCable
-```
-
-### Optional environment variable
+### Required
 
 | Variable | Description |
 |---|---|
-| `ANTHROPIC_API_KEY` | Enables AI enrichment and error explanation. If unset, both features are silently skipped. |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `REDIS_URL` | Redis connection string |
+| `RAILS_MASTER_KEY` | Contents of `config/master.key` |
+
+### Optional
+
+| Variable | Default | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Enables repo analysis enrichment and AI error explanation. If unset, both features are silently skipped. |
+| `GITHUB_CLIENT_ID` | credentials | GitHub OAuth app client ID |
+| `GITHUB_CLIENT_SECRET` | credentials | GitHub OAuth app client secret |
+| `GOOGLE_CLIENT_ID` | credentials | Google OAuth app client ID |
+| `GOOGLE_CLIENT_SECRET` | credentials | Google OAuth app client secret |
+| `ENCRYPTION_KEY` | credentials | 32-byte AES-256 key for attr_encrypted |
+| `RAILS_MAX_THREADS` | `5` | Puma thread count + DB pool size |
+| `SIDEKIQ_CONCURRENCY` | `10` | Sidekiq worker threads |
+| `RAILS_LOG_TO_STDOUT` | — | Set to `true` in production |
+| `RAILS_SERVE_STATIC_FILES` | — | Set to `true` in production |
+
+Credentials (OAuth keys, encryption key) live in `config/credentials.yml.enc`. The environment variables override credentials when both are set.
 
 ---
 
@@ -262,225 +268,165 @@ deploy failed
 ```
 app/
 ├── channels/
-│   └── deployment_log_channel.rb     ActionCable — live log streaming
+│   └── deployment_log_channel.rb       ActionCable — authenticates and subscribes
 ├── controllers/
-│   ├── application_controller.rb     require_login, current_user
-│   ├── auth_controller.rb            GitHub OAuth callback/logout
-│   ├── dashboard_controller.rb
-│   ├── deployments_controller.rb
-│   ├── projects_controller.rb
-│   ├── repositories_controller.rb
-│   └── secrets_controller.rb
+│   ├── application_controller.rb       require_login, current_user
+│   ├── auth_controller.rb              GitHub + Google OAuth callbacks, disconnect
+│   ├── projects_controller.rb          CRUD, deploy, analyze, CI/CD
+│   ├── deployments_controller.rb       show (live terminal), create, cancel
+│   ├── secrets_controller.rb           add/remove encrypted env vars
+│   ├── repositories_controller.rb      list + sync from GitHub
+│   └── settings_controller.rb          GCP credentials
 ├── javascript/controllers/
-│   ├── log_controller.js             Auto-scroll, line count, elapsed timer
-│   ├── deploy_controller.js          Loading state on Deploy button
-│   ├── clipboard_controller.js       Copy URL to clipboard
-│   └── flash_controller.js           Auto-dismiss flash messages
+│   ├── log_controller.js               auto-scroll, line count, elapsed timer
+│   ├── deploy_controller.js            loading state on Deploy button
+│   ├── clipboard_controller.js         copy URL to clipboard
+│   └── flash_controller.js             auto-dismiss flash messages (5s)
 ├── jobs/
-│   ├── deployment_job.rb             Entry point
-│   ├── repository_analysis_job.rb    Pre-deploy repo analysis (deterministic + AI)
+│   ├── deployment_job.rb               pipeline entry point
+│   ├── repository_analysis_job.rb      deterministic + AI analysis
 │   └── deployments/
-│       ├── base_job.rb               Shared error handling, guard_status!
-│       ├── prepare_job.rb            Clone + detect + Dockerfile
-│       ├── build_image_job.rb        Cloud Build submit
-│       ├── poll_build_status_job.rb  Polling with exponential backoff
-│       ├── deploy_to_cloud_run_job.rb  gcloud run deploy
-│       └── explain_error_job.rb      Async AI failure explanation
+│       ├── base_job.rb                 shared error handling, run_gcloud!
+│       ├── prepare_job.rb              clone, detect, generate Dockerfile
+│       ├── build_image_job.rb          Cloud Build submit
+│       ├── poll_build_status_job.rb    exponential backoff polling
+│       ├── deploy_to_cloud_run_job.rb  gcloud run deploy + health check
+│       └── explain_error_job.rb        async AI failure explanation
 ├── models/
-│   ├── user.rb                       GitHub OAuth, encrypted token
-│   ├── repository.rb                 Synced from GitHub API
-│   ├── project.rb                    One project = one Cloud Run service
-│   ├── deployment.rb                 State machine + Turbo broadcasts
-│   ├── deployment_log.rb             Append-only log lines
-│   └── secret.rb                     Encrypted env vars
-├── services/
-│   ├── framework_detector.rb         File-presence heuristics
-│   ├── dockerfile_generator.rb       Templates per framework
-│   ├── repository_analyzer.rb        Orchestrates deterministic analysis
-│   ├── analysis/
-│   │   ├── dependency_reader.rb      Reads deps from lockfiles
-│   │   ├── env_var_detector.rb       Detects likely env vars from source
-│   │   └── database_detector.rb      Detects DB type (postgres, mysql, etc.)
-│   ├── ai/
-│   │   ├── repository_analyzer.rb    AI enrichment of deterministic analysis
-│   │   └── error_explainer.rb        Plain-English failure explanation
-│   └── deployments/
-│       └── cloud_run_deployer.rb     Legacy single-class deployer
-└── views/
-    ├── dashboard/index.html.erb      Landing page + project grid
+│   ├── user.rb                         OAuth tokens (encrypted), quotas, GCP helpers
+│   ├── repository.rb                   synced from GitHub API
+│   ├── project.rb                      one project = one Cloud Run service
+│   ├── deployment.rb                   status machine, Turbo broadcasts
+│   ├── deployment_log.rb               append-only log lines
+│   └── secret.rb                       encrypted env vars per project
+└── services/
+    ├── framework_detector.rb           file-presence heuristics
+    ├── dockerfile_generator.rb         per-framework templates
+    ├── repository_analyzer.rb          orchestrates deterministic analysis
+    ├── analysis/
+    │   ├── dependency_reader.rb        reads from lockfiles
+    │   ├── env_var_detector.rb         detects likely env vars from source
+    │   └── database_detector.rb        postgres, mysql, sqlite, mongodb, redis
+    ├── ai/
+    │   ├── repository_analyzer.rb      Claude enrichment on top of deterministic result
+    │   └── error_explainer.rb          2–4 sentence plain-English failure explanation
     ├── deployments/
-    │   ├── show.html.erb             Live log terminal
-    │   ├── _outcome.html.erb         Service URL or error panel
-    │   ├── _status_badge.html.erb    Turbo Stream replace target
-    │   └── _log_line.html.erb        Single log line with timestamp
-    ├── projects/
-    │   ├── show.html.erb             Project detail + deployment list
-    │   ├── _form.html.erb            Shared create/edit form
-    │   └── _project.html.erb         Dashboard project card
-    ├── repositories/index.html.erb   GitHub repo list + sync
-    └── secrets/index.html.erb        Add/remove environment variables
+    │   └── error_categorizer.rb        maps error strings to 13 named categories
+    └── gcp/
+        ├── api_enabler.rb              enables Cloud Build / Run / AR APIs
+        └── artifact_registry_provisioner.rb  creates the docker repo
 ```
 
 ---
 
-## Database Schema
+## Real-Time Updates
 
-Six tables. All foreign keys enforced at the database level.
+No custom WebSocket code. All live updates are Turbo Streams broadcast from model callbacks and job methods:
 
-```
-users
-├── has_many repositories
-└── has_many projects
-      ├── has_many deployments
-      │     └── has_many deployment_logs
-      └── has_many secrets
-```
-
-| Table | Rows at 100k deploys/month |
-|---|---|
-| `users` | small |
-| `repositories` | small |
-| `projects` | small |
-| `deployments` | 100,000/month |
-| `deployment_logs` | ~20,000,000/month |
-| `secrets` | small |
-
-See [`docs/database_schema.md`](docs/database_schema.md) for full column reference.
-
----
-
-## Hotwire / Real-Time Updates
-
-Live updates require no custom WebSocket code. Everything runs through Turbo Streams:
-
-| Event | Broadcast | Browser effect |
+| Trigger | Stream | Browser effect |
 |---|---|---|
-| `append_log` called | `broadcast_append_to "deployment_#{id}_logs"` | Log line appended to terminal |
-| `transition_to!` called | `broadcast_replace_to "deployment_#{id}"` | Status badge updated |
-| Terminal state reached | `broadcast_replace_to "deployment_#{id}"` (outcome) | URL or error panel appears |
-| Terminal state reached | `broadcast_remove_to "deployment_#{id}_logs"` | Spinner removed |
-| Deploy button clicked | `turbo_stream.prepend` | New deployment row appears in list |
+| `deployment.append_log` | `deployment_#{id}_logs` | Log line appended to terminal |
+| `deployment.transition_to!` | `deployment_#{id}` | Status badge replaced |
+| Terminal state reached | `deployment_#{id}` (outcome) | Service URL or error panel appears |
+| Terminal state reached | `deployment_#{id}_logs` | Spinner removed |
 
-The `log` Stimulus controller uses a `MutationObserver` to auto-scroll the terminal as Turbo appends lines, pausing if the user scrolls up manually.
+The `log` Stimulus controller uses a `MutationObserver` to auto-scroll the terminal as Turbo appends lines, pausing when the user scrolls up.
+
+ActionCable uses the async adapter in development and Redis in production. Both are configured in `config/cable.yml`.
 
 ---
 
 ## Deploying Anchor to Cloud Run
 
-The default `Dockerfile` builds a production image using a multi-stage build with jemalloc. It does **not** include the `gcloud` CLI — you need to extend it for Sidekiq workers:
-
-```dockerfile
-# Add to Dockerfile before the final stage CMD
-RUN apt-get update -qq && apt-get install -y apt-transport-https ca-certificates gnupg && \
-    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] \
-      https://packages.cloud.google.com/apt cloud-sdk main" \
-      | tee /etc/apt/sources.list.d/google-cloud-sdk.list && \
-    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-      | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
-    apt-get update -qq && apt-get install -y google-cloud-cli && \
-    rm -rf /var/lib/apt/lists
-```
-
-Deploy two Cloud Run services from the same image:
+Build the image, then run two Cloud Run services from it — one for web, one for Sidekiq:
 
 ```bash
-# Web
-gcloud run deploy anchor-web \
-  --image=IMAGE_URL \
-  --command="./bin/thrust,./bin/rails,server" \
-  --set-env-vars=RAILS_MASTER_KEY=...,DATABASE_URL=...,REDIS_URL=...
+# Build
+gcloud builds submit --tag=IMAGE_URL
 
-# Worker (Sidekiq)
-gcloud run deploy anchor-worker \
-  --image=IMAGE_URL \
-  --command="bundle,exec,sidekiq,-C,config/sidekiq.yml" \
-  --set-env-vars=RAILS_MASTER_KEY=...,DATABASE_URL=...,REDIS_URL=...
-```
-
-Run migrations before first deploy:
-
-```bash
+# Migrations
 gcloud run jobs create anchor-migrate \
   --image=IMAGE_URL \
   --command="bundle,exec,rails,db:migrate"
-
 gcloud run jobs execute anchor-migrate
+
+# Web
+gcloud run deploy anchor-web \
+  --image=IMAGE_URL \
+  --command="./bin/thrust,./bin/rails,server,-b,0.0.0.0,-p,8080" \
+  --set-env-vars="RAILS_MASTER_KEY=...,DATABASE_URL=...,REDIS_URL=..."
+
+# Worker
+gcloud run deploy anchor-worker \
+  --image=IMAGE_URL \
+  --command="bundle,exec,sidekiq,-C,config/sidekiq.yml" \
+  --set-env-vars="RAILS_MASTER_KEY=...,DATABASE_URL=...,REDIS_URL=..."
 ```
 
----
-
-## Secrets
-
-Two types of sensitive data are encrypted at rest using `attr_encrypted` (AES-256-CBC):
-
-| Field | Model | Column in DB |
-|---|---|---|
-| GitHub OAuth token | `User` | `github_token` (ciphertext in single column) |
-| Environment variable value | `Secret` | `encrypted_value` + `encrypted_value_iv` |
-
-Both use the key at `credentials.dig(:encryption, :key)`. This key must be 32 bytes and must never be rotated without re-encrypting all records first.
+The `Dockerfile` is a multi-stage build: asset compilation and gem installation in a build stage, then a minimal runtime image with jemalloc and the `gcloud` CLI baked in (required by Sidekiq workers).
 
 ---
 
-## Scaling
+## Security
 
-The monolith handles 100k deployments/month with targeted changes at two trigger points:
+**Encrypted at rest (AES-256-CBC via attr_encrypted):**
 
-**When `deployment_logs` hits 1M rows:**
-- Add nightly GCS archival job
-- Split Sidekiq into 4 queues by pipeline step
-- Separate web and worker Cloud Run services
-
-**When Sidekiq queue depth consistently >200:**
-- Add PostgreSQL read replica
-- Partition `deployment_logs` by month
-- Scale Sidekiq workers horizontally
-
-See [`docs/scaling.md`](docs/scaling.md) for the full analysis with load numbers.
-
----
-
-## Documentation
-
-| File | Contents |
+| Field | Model |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | System diagram, component overview, auth flow, security model |
-| [`docs/deployment_pipeline.md`](docs/deployment_pipeline.md) | Step-by-step pipeline, gcloud commands, error handling, GCP prereqs |
-| [`docs/database_schema.md`](docs/database_schema.md) | Every table, column, index, and convention |
-| [`docs/mvp_plan.md`](docs/mvp_plan.md) | 7-day build schedule, backlog, risk table, definition of done |
-| [`docs/scaling.md`](docs/scaling.md) | Load model, failure modes, V1→V2→V3 changes, GCP quota management |
+| `github_token` | User |
+| `google_access_token` | User |
+| `google_refresh_token` | User |
+| `gcp_service_account_key` | User |
+| Secret `value` | Secret |
+
+All use the key at `credentials.dig(:encryption, :key)`. Rotating the key requires re-encrypting all records first.
+
+**Rate limiting (Rack::Attack, Redis-backed):**
+
+| Throttle | Limit |
+|---|---|
+| General requests | 300 req / 5 min per IP |
+| OAuth callbacks | 10 attempts / 20 min per IP |
+| Deploys | 20 / hour per user |
+| Analyze | 30 / hour per user |
+| Repo sync | 10 / 10 min per user |
+
+**Deployment quotas** are also enforced at the model level: 20 deploys/day and 200/month per user, tracked in `deployments_today` / `deployments_this_month` with a midnight reset.
+
+---
+
+## Tests
+
+```bash
+bundle exec rspec
+```
+
+260 examples covering models, jobs, services, and controllers. The test suite uses WebMock to stub all external HTTP, Factory Bot for fixtures, and Shoulda Matchers for model assertions.
 
 ---
 
 ## Common Tasks
 
 ```bash
-# Start development server
+# Start development
 bin/dev
 
-# Run database migrations
-bundle exec rails db:migrate
-
-# Open Rails console
+# Rails console
 bundle exec rails console
 
 # Check Sidekiq queue depth
-bundle exec rails runner "Sidekiq::Queue.all.each { |q| puts "#{q.name}: #{q.size}" }"
+bundle exec rails runner "Sidekiq::Queue.all.each { |q| puts \"#{q.name}: #{q.size}\" }"
 
-# Manually trigger a deployment (in console)
-project = Project.find(1)
-deployment = project.deployments.create!(status: "pending", triggered_by: "manual", branch: project.production_branch)
+# Manually trigger a deployment
+deployment = Project.find(ID).deployments.create!(
+  status: "pending", triggered_by: "manual", branch: "main"
+)
 DeploymentJob.perform_later(deployment.id)
 
-# Sync GitHub repositories for a user
-user = User.find(1)
-repos = user.github_client.repos(user.github_login, per_page: 100)
-repos.each { |r| Repository.sync_from_github(user, r) }
-
-# Check encryption is working
-secret = Secret.create!(project: Project.first, key: "TEST_KEY", value: "hello")
-puts secret.value          # => "hello"
-puts secret.encrypted_value # => ciphertext
+# Inspect encrypted value
+secret = Secret.find(ID)
+puts secret.value           # decrypted
+puts secret.encrypted_value # ciphertext
 ```
 
 ---
@@ -489,8 +435,6 @@ puts secret.encrypted_value # => ciphertext
 
 1. Branch from `main`
 2. Make changes
-3. Verify boot: `bundle exec rails runner "puts 'OK'"`
-4. Verify routes: `bundle exec rails routes`
+3. `bundle exec rails runner "puts 'OK'"` — verify boot
+4. `bundle exec rspec` — verify tests pass
 5. Open a pull request
-
-There are no automated tests in V1. Add them before shipping V2.

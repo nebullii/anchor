@@ -1,57 +1,99 @@
 <!DOCTYPE html>
-<html class="h-full bg-gray-950">
+<html class="h-full">
   <head>
     <title><%= content_for(:title) || "Anchor" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
-    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.png">
+    <script>
+      (function() {
+        var key = "anchor-theme";
+        var saved = localStorage.getItem(key);
+        var prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+        var theme = saved || (prefersLight ? "light" : "dark");
+        document.documentElement.classList.add(theme === "light" ? "theme-light" : "theme-dark");
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
   </head>
 
-  <body class="h-full font-sans antialiased text-gray-100">
+  <body class="h-full antialiased">
 
     <%# ── Navbar ─────────────────────────────────────────────── %>
-    <nav class="border-b border-gray-800 bg-gray-950">
+    <nav class="nav-shell">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div class="flex h-14 items-center justify-between">
+        <div class="flex h-16 items-center justify-between">
 
           <div class="flex items-center gap-8">
-            <%= link_to root_path, class: "flex items-center gap-2 font-bold text-white tracking-tight" do %>
-              <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+            <%= link_to root_path, class: "flex items-center gap-2" do %>
+              <svg class="h-7 w-7 flex-shrink-0" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M32 13L45 49H38L35.5 41H28.5L26 49H19L32 13Z" fill="currentColor" opacity="0.9"/>
+                <path d="M30.3 34.8H33.7L32 29.5L30.3 34.8Z" fill="currentColor"/>
+                <path d="M21 49H43" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity="0.6"/>
               </svg>
-              Anchor
+              <span class="text-lg font-bold tracking-tight">Anchor</span>
             <% end %>
 
-            <% if logged_in? %>
-              <div class="hidden sm:flex items-center gap-6 text-sm text-gray-400">
+            <div class="hidden items-center gap-6 text-sm text-slate-300 sm:flex">
+              <%= link_to "Pricing", pricing_path,
+                    class: "transition-colors hover:text-white #{active_nav_class('pricing')}" %>
+              <% if logged_in? %>
                 <%= link_to "Projects",     projects_path,
-                      class: "hover:text-white transition-colors #{active_nav_class('projects')}" %>
+                      class: "transition-colors hover:text-white #{active_nav_class('projects')}" %>
                 <%= link_to "Repositories", repositories_path,
-                      class: "hover:text-white transition-colors #{active_nav_class('repositories')}" %>
-              </div>
-            <% end %>
+                      class: "transition-colors hover:text-white #{active_nav_class('repositories')}" %>
+              <% end %>
+            </div>
           </div>
 
           <div class="flex items-center gap-3">
+            <button type="button"
+                    id="theme-toggle"
+                    class="theme-switcher"
+                    aria-label="Toggle theme">
+              <span class="theme-switcher-thumb"></span>
+              <span class="theme-switcher-icons">
+                <%# Moon icon — represents dark mode %>
+                <svg class="theme-switcher-icon theme-switcher-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+                <%# Sun icon — represents light mode %>
+                <svg class="theme-switcher-icon theme-switcher-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4.5"/>
+                  <line x1="12" y1="2" x2="12" y2="5"/>
+                  <line x1="12" y1="19" x2="12" y2="22"/>
+                  <line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/>
+                  <line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/>
+                  <line x1="2" y1="12" x2="5" y2="12"/>
+                  <line x1="19" y1="12" x2="22" y2="12"/>
+                  <line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/>
+                  <line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/>
+                </svg>
+              </span>
+            </button>
             <% if logged_in? %>
               <% if current_user.avatar_url.present? %>
                 <img src="<%= current_user.avatar_url %>"
-                     class="w-7 h-7 rounded-full"
+                     class="h-8 w-8 rounded-full ring-1 ring-slate-600"
                      alt="<%= current_user.github_login %>">
               <% end %>
-              <span class="hidden sm:block text-sm text-gray-400"><%= current_user.github_login %></span>
+              <span class="hidden text-sm text-slate-300 sm:block"><%= current_user.github_login %></span>
               <%= link_to "Settings", settings_path,
-                    class: "text-xs text-gray-400 hover:text-white transition-colors px-3 py-1.5 rounded border border-gray-800 hover:border-gray-600" %>
+                    class: "btn-secondary !px-3 !py-1.5 !text-xs" %>
               <%= button_to logout_path, method: :delete,
-                    class: "text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded border border-gray-800 hover:border-gray-600" do %>
+                    class: "btn-secondary !px-3 !py-1.5 !text-xs !text-slate-400" do %>
                 Sign out
               <% end %>
             <% else %>
               <%= button_to "/auth/github", data: { turbo: false },
-                    class: "flex items-center gap-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-md transition-colors" do %>
+                    class: "btn-primary !px-4 !py-1.5" do %>
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
                 </svg>
@@ -67,9 +109,9 @@
     <div id="notices" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 space-y-2">
       <% if notice.present? %>
         <div data-controller="flash"
-             class="flex items-center justify-between rounded-lg bg-emerald-950 border border-emerald-800 px-4 py-3 text-sm text-emerald-300">
+             class="surface-card flex items-center justify-between border-emerald-700/70 bg-emerald-950/35 px-4 py-3 text-sm text-emerald-200">
           <span><%= notice %></span>
-          <button data-action="flash#dismiss" class="text-emerald-600 hover:text-emerald-400 ml-4 flex-shrink-0">
+          <button data-action="flash#dismiss" class="ml-4 flex-shrink-0 text-emerald-400 hover:text-emerald-200">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -78,9 +120,9 @@
       <% end %>
       <% if alert.present? %>
         <div data-controller="flash"
-             class="flex items-center justify-between rounded-lg bg-red-950 border border-red-800 px-4 py-3 text-sm text-red-300">
+             class="surface-card flex items-center justify-between border-red-700/70 bg-red-950/35 px-4 py-3 text-sm text-red-200">
           <span><%= alert %></span>
-          <button data-action="flash#dismiss" class="text-red-600 hover:text-red-400 ml-4 flex-shrink-0">
+          <button data-action="flash#dismiss" class="ml-4 flex-shrink-0 text-red-400 hover:text-red-200">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -90,9 +132,126 @@
     </div>
 
     <%# ── Page content ────────────────────────────────────────── %>
-    <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+    <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <%= yield %>
     </main>
+
+    <%# ── Footer ──────────────────────────────────────────────── %>
+    <footer class="border-t border-[var(--anchor-border)] mt-24">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+        <%# Top row %>
+        <div class="py-12 grid grid-cols-1 sm:grid-cols-3 gap-10">
+
+          <%# Brand %>
+          <div>
+            <div class="flex items-center gap-2 mb-3">
+              <svg class="h-6 w-6 flex-shrink-0" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M32 13L45 49H38L35.5 41H28.5L26 49H19L32 13Z" fill="currentColor" opacity="0.9"/>
+                <path d="M30.3 34.8H33.7L32 29.5L30.3 34.8Z" fill="currentColor"/>
+                <path d="M21 49H43" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity="0.6"/>
+              </svg>
+              <span class="text-sm font-bold tracking-tight">Anchor</span>
+            </div>
+            <p class="text-xs text-[var(--anchor-muted)] leading-relaxed max-w-[200px]">
+              Deploy any GitHub repo to the cloud — zero config, zero infrastructure work.
+            </p>
+          </div>
+
+          <%# Product %>
+          <div>
+            <p class="text-xs font-semibold text-[var(--anchor-text)] mb-4 tracking-wide uppercase">Product</p>
+            <ul class="space-y-2.5 text-xs text-[var(--anchor-muted)]">
+              <li><%= link_to "Dashboard", root_path,    class: "hover:text-[var(--anchor-text)] transition-colors" %></li>
+              <li><%= link_to "Pricing",   pricing_path, class: "hover:text-[var(--anchor-text)] transition-colors" %></li>
+              <% if logged_in? %>
+                <li><%= link_to "Projects",     projects_path,     class: "hover:text-[var(--anchor-text)] transition-colors" %></li>
+                <li><%= link_to "Repositories", repositories_path, class: "hover:text-[var(--anchor-text)] transition-colors" %></li>
+                <li><%= link_to "Settings",     settings_path,     class: "hover:text-[var(--anchor-text)] transition-colors" %></li>
+              <% end %>
+            </ul>
+          </div>
+
+          <%# Resources %>
+          <div>
+            <p class="text-xs font-semibold text-[var(--anchor-text)] mb-4 tracking-wide uppercase">Resources</p>
+            <ul class="space-y-2.5 text-xs text-[var(--anchor-muted)]">
+              <li><a href="#" class="hover:text-[var(--anchor-text)] transition-colors">Documentation</a></li>
+              <li><a href="#" class="hover:text-[var(--anchor-text)] transition-colors">Changelog</a></li>
+              <li><a href="#" class="hover:text-[var(--anchor-text)] transition-colors">Status</a></li>
+            </ul>
+          </div>
+
+        </div>
+
+        <%# Bottom bar %>
+        <div class="border-t border-[var(--anchor-border)] py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p class="text-xs text-[var(--anchor-muted)]">
+            &copy; <%= Date.today.year %> Anchor. All rights reserved.
+          </p>
+
+          <%# Social links %>
+          <div class="flex items-center gap-4">
+            <%# GitHub %>
+            <a href="#" target="_blank" rel="noopener" aria-label="GitHub"
+               class="text-[var(--anchor-muted)] hover:text-[var(--anchor-text)] transition-colors">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
+              </svg>
+            </a>
+            <%# Twitter / X %>
+            <a href="#" target="_blank" rel="noopener" aria-label="Twitter / X"
+               class="text-[var(--anchor-muted)] hover:text-[var(--anchor-text)] transition-colors">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+            </a>
+            <%# Discord %>
+            <a href="#" target="_blank" rel="noopener" aria-label="Discord"
+               class="text-[var(--anchor-muted)] hover:text-[var(--anchor-text)] transition-colors">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.033.055a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+              </svg>
+            </a>
+            <%# LinkedIn %>
+            <a href="#" target="_blank" rel="noopener" aria-label="LinkedIn"
+               class="text-[var(--anchor-muted)] hover:text-[var(--anchor-text)] transition-colors">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+              </svg>
+            </a>
+          </div>
+        </div>
+
+      </div>
+    </footer>
+
+    <script>
+      (function() {
+        var KEY = "anchor-theme";
+
+        function applyTheme(theme) {
+          var html = document.documentElement;
+          html.classList.remove("theme-light", "theme-dark");
+          html.classList.add(theme === "light" ? "theme-light" : "theme-dark");
+          html.dataset.theme = theme;
+          localStorage.setItem(KEY, theme);
+        }
+
+        function setupToggle() {
+          var btn = document.getElementById("theme-toggle");
+          if (!btn || btn._themeReady) return;
+          btn._themeReady = true;
+          btn.addEventListener("click", function() {
+            var next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+            applyTheme(next);
+          });
+        }
+
+        // turbo:load fires on initial page load AND every Turbo navigation
+        document.addEventListener("turbo:load", setupToggle);
+      })();
+    </script>
 
   </body>
 </html>
