@@ -14,7 +14,7 @@ module Deployments
     def perform(deployment_id)
       catch(:skip) do
         with_deployment(deployment_id) do |deployment|
-          guard_status!(deployment, "queued", "pending")
+          guard_status!(deployment, "pending")
 
           project    = deployment.project
           repository = project.repository
@@ -24,14 +24,15 @@ module Deployments
 
           guard_repo_size!(deployment, repository)
 
+          deployment.transition_to!("cloning")
           deployment.append_log("Cloning #{repository.full_name} @ #{branch(project)}...")
 
           repo_path = clone_repository(deployment, project, repository)
 
+          deployment.transition_to!("detecting")
           deployment.append_log("Detecting framework...")
 
           detection = detect_framework(deployment, repo_path, project)
-          build_deployment_plan(deployment, project, detection, repo_path)
           generate_dockerfile(deployment, repo_path, detection)
 
           deployment.append_log("Preparation complete. Queuing container build.")
@@ -104,25 +105,6 @@ module Deployments
         DockerfileGenerator.new(repo_path, detection).call
         deployment.append_log("Generated Dockerfile for #{detection.framework}.")
       end
-    end
-
-    def build_deployment_plan(deployment, project, detection, repo_path)
-      analysis = project.analysis_result.presence || {
-        "framework" => detection.framework,
-        "runtime" => detection.runtime,
-        "port" => detection.port,
-        "has_dockerfile" => File.exist?(File.join(repo_path, "Dockerfile")),
-        "detected_env_vars" => []
-      }
-
-      plan = Deployments::PlanBuilder.new(
-        project: project,
-        analysis_result: analysis,
-        user: project.user
-      ).call
-
-      deployment.update!(deployment_plan: plan)
-      deployment.append_log("Deployment plan ready (readiness #{plan['deployment_readiness']}%).")
     end
 
     # ------------------------------------------------------------------ #

@@ -12,7 +12,7 @@ module Deployments
     def perform(deployment_id, repo_path)
       catch(:skip) do
         with_deployment(deployment_id) do |deployment|
-          guard_status!(deployment, "analyzing", "cloning", "detecting")
+          guard_status!(deployment, "cloning", "detecting")
 
           deployment.transition_to!("building")
 

@@ -1,11 +1,11 @@
 <%# locals: (deployment:) %>
 <%# Turbo Stream target: deployment_#{id}_status %>
-<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset min-w-24 justify-center <%= status_badge_class(deployment.status) %>">
+<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset w-24 justify-center <%= status_badge_class(deployment.status) %>">
   <% if status_spinning?(deployment.status) %>
     <svg class="w-3 h-3 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
     </svg>
   <% end %>
-  <%= deployment.status.to_s.humanize %>
+  <%= deployment.status %>
 </span>

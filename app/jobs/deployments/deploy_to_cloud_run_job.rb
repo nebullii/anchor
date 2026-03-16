@@ -1,7 +1,4 @@
 module Deployments
-  require "net/http"
-  require "uri"
-
   # Step 4 (final) of the deployment pipeline.
   #
   # Deploys the built container image to Google Cloud Run using the gcloud CLI.
@@ -24,12 +21,9 @@ module Deployments
           deployment.update!(service_url: service_url)
           project.update!(latest_url: service_url)
 
-          deployment.transition_to!("health_check")
-          run_health_check!(deployment, service_url)
-
           deployment.append_log("Deployment complete.")
           deployment.append_log("Live at: #{service_url}")
-          deployment.transition_to!("running")
+          deployment.transition_to!("success")
         end
       end
     end
@@ -105,25 +99,6 @@ module Deployments
 
     def container_port(project)
       project.port || 3000
-    end
-
-    def run_health_check!(deployment, service_url)
-      deployment.append_log("Running health check…")
-
-      uri = URI.parse(service_url)
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = (uri.scheme == "https")
-      http.open_timeout = 5
-      http.read_timeout = 8
-      response = http.get(uri.path.presence || "/")
-
-      if response.code.to_i >= 500
-        raise Deployments::DeploymentError, "Health check failed with status #{response.code}."
-      end
-
-      deployment.append_log("Health check passed (#{response.code}).")
-    rescue => e
-      raise Deployments::DeploymentError, "Health check failed: #{e.message}"
     end
   end
 end
