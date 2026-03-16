@@ -35,13 +35,13 @@ RSpec.describe Deployment, type: :model do
 
   describe "#in_progress?" do
     it "returns true for active statuses" do
-      %w[pending cloning detecting building deploying].each do |s|
+      %w[queued pending analyzing cloning detecting building deploying health_check].each do |s|
         expect(build(:deployment, status: s).in_progress?).to be true
       end
     end
 
     it "returns false for terminal statuses" do
-      %w[success failed cancelled].each do |s|
+      %w[running success failed cancelled].each do |s|
         expect(build(:deployment, status: s).in_progress?).to be false
       end
     end
@@ -49,9 +49,16 @@ RSpec.describe Deployment, type: :model do
 
   describe "#terminal?" do
     it "returns true for success, failed, cancelled" do
-      %w[success failed cancelled].each do |s|
+      %w[running success failed cancelled].each do |s|
         expect(build(:deployment, status: s).terminal?).to be true
       end
+    end
+  end
+
+  describe "#success?" do
+    it "returns true for running and success" do
+      expect(build(:deployment, status: "running")).to be_success
+      expect(build(:deployment, status: "success")).to be_success
     end
   end
 
