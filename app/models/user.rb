@@ -69,6 +69,24 @@ class User < ApplicationRecord
     google_access_token.present?
   end
 
+  def gcp_configured?
+    gcp_service_account_key.present?
+  end
+
+  def store_gcp_service_account(project_id, service_account_email, key_json)
+    update!(
+      default_gcp_project_id:     project_id,
+      gcp_service_account_email:  service_account_email,
+      gcp_service_account_key:    key_json
+    )
+  end
+
+  # Returns a fresh access token, refreshing via Google if expired.
+  def fresh_google_access_token
+    return google_access_token if google_token_expires_at&.future?
+    fresh_google_token!
+  end
+
   # Returns a fresh OAuth access token, refreshing it first if expired.
   # Raises if no OAuth tokens are stored.
   def fresh_google_token!

@@ -1,0 +1,6 @@
+alice:
+  github_id: "1001"
+  github_login: alice
+  encrypted_github_token: placeholder_token
+  name: Alice
+  email: alice@example.com
