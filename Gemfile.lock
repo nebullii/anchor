@@ -125,7 +125,7 @@ GEM
       net-http (~> 0.5)
     globalid (1.3.0)
       activesupport (>= 6.1)
-    google-apis-cloudbuild_v1 (0.78.0)
+    google-apis-cloudbuild_v1 (0.79.0)
       google-apis-core (>= 0.15.0, < 2.a)
     google-apis-core (1.0.2)
       addressable (~> 2.8, >= 2.8.7)
@@ -462,7 +462,7 @@ DEPENDENCIES
   factory_bot_rails
   faker
   faraday (~> 2.0)
-  google-apis-cloudbuild_v1 (~> 0.1)
+  google-apis-cloudbuild_v1 (~> 0.79)
   google-apis-run_v2 (~> 0.110)
   googleauth (~> 1.0)
   importmap-rails
