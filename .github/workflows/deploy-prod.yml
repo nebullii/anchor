@@ -229,7 +229,6 @@ jobs:
             --max-instances=1 \
             --memory=512Mi \
             --cpu=1 \
-            --cpu-always-allocated \
             --no-cpu-throttling \
             --timeout=3600 \
             --set-env-vars="RAILS_ENV=production" \
