@@ -38,8 +38,9 @@ class Project < ApplicationRecord
   # ------------------------------------------------------------------ #
   # Callbacks                                                            #
   # ------------------------------------------------------------------ #
-  before_validation :set_slug,         on: :create
-  before_validation :set_service_name, on: :create
+  before_validation :set_slug,           on: :create
+  before_validation :set_service_name,   on: :create
+  before_validation :set_webhook_secret, on: :create
   after_create      :enqueue_provisioning
 
   # ------------------------------------------------------------------ #
@@ -128,6 +129,10 @@ class Project < ApplicationRecord
 
   def set_service_name
     self.service_name ||= "cl-#{slug}"
+  end
+
+  def set_webhook_secret
+    self.webhook_secret ||= SecureRandom.hex(24)
   end
 
   def enqueue_provisioning

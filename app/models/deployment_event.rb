@@ -23,22 +23,37 @@ class DeploymentEvent < ApplicationRecord
 
   # Record a status transition event.
   def self.record_transition(deployment, from:, to:)
-    create!(
+    event = create!(
       deployment:  deployment,
       event_type:  "status_changed",
       from_status: from.to_s,
       to_status:   to.to_s,
       occurred_at: Time.current
     )
+    broadcast_event(event)
+    event
   end
 
   # Record an arbitrary event with optional metadata.
   def self.record(deployment, type, metadata: {})
-    create!(
+    event = create!(
       deployment:  deployment,
       event_type:  type,
       metadata:    metadata,
       occurred_at: Time.current
+    )
+    broadcast_event(event)
+    event
+  end
+
+  private
+
+  def self.broadcast_event(event)
+    Turbo::StreamsChannel.broadcast_append_to(
+      "deployment_#{event.deployment_id}_events",
+      target:  "deployment_events_timeline",
+      partial: "deployments/event_row",
+      locals:  { event: event }
     )
   end
 end

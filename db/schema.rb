@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_16_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_16_235712) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -68,7 +68,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_000001) do
     t.index ["error_category"], name: "index_deployments_on_error_category"
     t.index ["project_id", "status"], name: "index_deployments_on_project_id_and_status"
     t.index ["project_id"], name: "index_deployments_on_project_id"
-    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text <> ALL (ARRAY[('success'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text]))"
+    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text <> ALL (ARRAY[('running'::character varying)::text, ('success'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text]))"
     t.index ["status"], name: "index_deployments_on_status"
     t.index ["triggered_by"], name: "index_deployments_on_triggered_by"
   end
@@ -100,6 +100,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_000001) do
     t.string "status", default: "inactive", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.string "webhook_secret"
     t.index ["analysis_status"], name: "index_projects_on_analysis_status"
     t.index ["gcp_project_id"], name: "index_projects_on_gcp_project_id"
     t.index ["gcp_provisioned"], name: "index_projects_on_gcp_provisioned"

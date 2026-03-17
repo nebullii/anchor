@@ -1,5 +1,5 @@
 class ProjectsController < ApplicationController
-  before_action :set_project, only: %i[show edit update destroy deploy analyze setup_cicd generate_cicd commit_cicd]
+  before_action :set_project, only: %i[show edit update destroy deploy redeploy analyze setup_cicd generate_cicd commit_cicd dockerfile_preview]
 
   def index
     @projects = current_user.projects.includes(:repository, :deployments).ordered
@@ -104,6 +104,64 @@ class ProjectsController < ApplicationController
       format.html do
         redirect_to project_deployment_path(@project, @deployment),
                     notice: "Deployment started."
+      end
+    end
+  end
+
+  def redeploy
+    last = @project.last_successful_deployment
+    unless last
+      redirect_to @project, alert: "No successful deployment to redeploy from." and return
+    end
+
+    @deployment = @project.deployments.create!(
+      status:         "queued",
+      triggered_by:   "manual",
+      branch:         last.branch || @project.production_branch,
+      commit_sha:     last.commit_sha,
+      commit_message: last.commit_message,
+      commit_author:  last.commit_author
+    )
+    DeploymentJob.perform_later(@deployment.id)
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: [
+          turbo_stream.prepend(
+            "project_#{@project.id}_deployment_list",
+            partial: "deployments/row",
+            locals:  { deployment: @deployment, show_project: false }
+          ),
+          turbo_stream.replace(
+            "notices",
+            partial: "shared/notice",
+            locals:  { message: "Redeployment queued." }
+          )
+        ]
+      end
+      format.html do
+        redirect_to project_deployment_path(@project, @deployment),
+                    notice: "Redeployment started."
+      end
+    end
+  end
+
+  def dockerfile_preview
+    framework = @project.framework
+    metadata  = @project.analysis_result&.dig("metadata") || {}
+    content   = DockerfileGenerator.preview(framework, metadata)
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          "dockerfile_preview_modal",
+          partial: "projects/dockerfile_preview_modal",
+          locals:  { project: @project, content: content }
+        )
+      end
+      format.html do
+        @dockerfile_content = content
+        render :show
       end
     end
   end
