@@ -165,12 +165,14 @@ jobs:
             --args=exec,rails,db:migrate \
             --max-retries=1 \
             --task-timeout=600 \
-            --memory=512Mi \
+            --memory=256Mi \
             --cpu=1 \
             --set-env-vars="RAILS_ENV=production" \
             --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
             --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
-            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}"
+            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}"
 
           # Execute the job and wait for completion (fails CI if migration fails).
           gcloud run jobs execute ${{ env.MIGRATE_JOB }} \
@@ -190,8 +192,8 @@ jobs:
             --allow-unauthenticated \
             --port=8080 \
             --min-instances=0 \
-            --max-instances=5 \
-            --memory=512Mi \
+            --max-instances=3 \
+            --memory=256Mi \
             --cpu=1 \
             --cpu-throttling \
             --timeout=60 \
@@ -223,9 +225,9 @@ jobs:
             --no-allow-unauthenticated \
             --command=bundle \
             --args=exec,sidekiq,-C,config/sidekiq.yml \
-            --min-instances=1 \
+            --min-instances=0 \
             --max-instances=1 \
-            --memory=1Gi \
+            --memory=512Mi \
             --cpu=1 \
             --cpu-always-allocated \
             --no-cpu-throttling \
