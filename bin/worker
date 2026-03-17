@@ -2,30 +2,32 @@
 # Entrypoint for the Sidekiq worker on Cloud Run.
 #
 # Cloud Run requires every service to listen on PORT for health checks.
-# Sidekiq doesn't serve HTTP, so we start a minimal WEBrick health server
-# in a background thread, then spawn Sidekiq as a child process.
-#
-# Using Process.spawn (not exec) so the WEBrick thread stays alive
-# throughout the container lifecycle, satisfying Cloud Run health checks.
+# Sidekiq doesn't serve HTTP, so we start a minimal TCP health server
+# using Ruby's built-in 'socket' library (no gems needed), then spawn
+# Sidekiq as a child process.
 
-require "webrick"
+require "socket"
 
 port = ENV.fetch("PORT", 8080).to_i
 
-server = WEBrick::HTTPServer.new(
-  Port:       port,
-  Logger:     WEBrick::Log.new("/dev/null"),
-  AccessLog:  []
-)
-
-server.mount_proc("/") do |_req, res|
-  res.status = 200
-  res.body   = "ok"
+Thread.new do
+  server = TCPServer.new("0.0.0.0", port)
+  loop do
+    client = server.accept
+    client.print "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+    client.close
+  rescue => e
+    STDERR.puts "[worker] health check error: #{e.message}"
+  end
 end
 
-trap("TERM") { server.shutdown }
-Thread.new { server.start }
+# Give the TCP server a moment to bind before Cloud Run probes it
+sleep 0.5
 
-# Spawn Sidekiq as a child process — do NOT exec, that would kill WEBrick
+# Spawn Sidekiq as a child process — do NOT exec, that would kill the health check thread
 sidekiq_pid = Process.spawn("bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml")
+
+trap("TERM") { Process.kill("TERM", sidekiq_pid) rescue nil }
+trap("INT")  { Process.kill("INT",  sidekiq_pid) rescue nil }
+
 Process.wait(sidekiq_pid)
