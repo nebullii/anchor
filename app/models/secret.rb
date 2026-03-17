@@ -4,8 +4,12 @@ class Secret < ApplicationRecord
   # attr_encrypted writes to `encrypted_value` and `encrypted_value_iv`
   # columns — never stores plaintext in the DB.                         #
   # ------------------------------------------------------------------ #
-  attr_encrypted :value,
-                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
+  ENCRYPTION_KEY = proc {
+    raw = ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key)
+    Digest::SHA256.digest(raw.to_s)[0, 32]
+  }
+
+  attr_encrypted :value, key: ENCRYPTION_KEY, algorithm: "aes-256-cbc"
 
   # ------------------------------------------------------------------ #
   # Associations                                                         #

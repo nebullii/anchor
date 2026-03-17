@@ -2,17 +2,15 @@ class User < ApplicationRecord
   # ------------------------------------------------------------------ #
   # Encryption                                                           #
   # ------------------------------------------------------------------ #
-  attr_encrypted :github_token,
-                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
+  ENCRYPTION_KEY = proc {
+    raw = ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key)
+    Digest::SHA256.digest(raw.to_s)[0, 32]
+  }
 
-  attr_encrypted :google_access_token,
-                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
-
-  attr_encrypted :google_refresh_token,
-                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
-
-  attr_encrypted :gcp_service_account_key,
-                 key: proc { ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key) }
+  attr_encrypted :github_token,          key: ENCRYPTION_KEY, algorithm: "aes-256-cbc"
+  attr_encrypted :google_access_token,   key: ENCRYPTION_KEY, algorithm: "aes-256-cbc"
+  attr_encrypted :google_refresh_token,  key: ENCRYPTION_KEY, algorithm: "aes-256-cbc"
+  attr_encrypted :gcp_service_account_key, key: ENCRYPTION_KEY, algorithm: "aes-256-cbc"
 
   # ------------------------------------------------------------------ #
   # Associations                                                         #
