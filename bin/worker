@@ -3,7 +3,10 @@
 #
 # Cloud Run requires every service to listen on PORT for health checks.
 # Sidekiq doesn't serve HTTP, so we start a minimal WEBrick health server
-# in a background thread, then exec Sidekiq in the foreground.
+# in a background thread, then spawn Sidekiq as a child process.
+#
+# Using Process.spawn (not exec) so the WEBrick thread stays alive
+# throughout the container lifecycle, satisfying Cloud Run health checks.
 
 require "webrick"
 
@@ -23,4 +26,6 @@ end
 trap("TERM") { server.shutdown }
 Thread.new { server.start }
 
-exec "bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"
+# Spawn Sidekiq as a child process — do NOT exec, that would kill WEBrick
+sidekiq_pid = Process.spawn("bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml")
+Process.wait(sidekiq_pid)
