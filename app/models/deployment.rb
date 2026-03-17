@@ -17,7 +17,8 @@ class Deployment < ApplicationRecord
   # Associations                                                         #
   # ------------------------------------------------------------------ #
   belongs_to :project
-  has_many   :deployment_logs, dependent: :destroy
+  has_many   :deployment_logs,   dependent: :destroy
+  has_many   :deployment_events, dependent: :destroy
 
   # ------------------------------------------------------------------ #
   # Validations                                                          #
@@ -59,11 +60,13 @@ class Deployment < ApplicationRecord
   def transition_to!(new_status)
     raise ArgumentError, "Unknown status: #{new_status}" unless STATUSES.include?(new_status.to_s)
 
+    old_status = status
     attrs = { status: new_status.to_s }
     attrs[:started_at]  = Time.current if %w[analyzing cloning queued pending].include?(new_status.to_s) && started_at.nil?
     attrs[:finished_at] = Time.current if TERMINAL_STATUSES.include?(new_status.to_s)
 
     update!(attrs)
+    DeploymentEvent.record_transition(self, from: old_status, to: new_status)
     sync_project_status!
     broadcast_status_update
     self

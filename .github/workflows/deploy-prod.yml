@@ -1,72 +1,186 @@
 name: Deploy — Production
 
+# Runs the full pipeline on every push to main:
+#   test → security → build → migrate → deploy web → deploy worker
+#
+# The deploy job only runs if both test and security pass.
+# A failed test or security scan will halt the pipeline before any GCP action.
+
 on:
   push:
     branches: [main]
 
 concurrency:
   group: deploy-prod
-  cancel-in-progress: false  # never cancel a prod deploy mid-flight
+  cancel-in-progress: false   # never cancel a prod deploy mid-flight
 
+env:
+  PROJECT_ID:  ${{ secrets.GCP_PROJECT_ID }}
+  REGION:      ${{ secrets.GCP_REGION }}
+  SERVICE:     anchor-prod
+  WORKER:      anchor-worker
+  MIGRATE_JOB: anchor-migrate
+  IMAGE:       ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/anchor/app
+
+# ── 1. Tests ────────────────────────────────────────────────────────────────
 jobs:
+  test:
+    name: RSpec
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: anchor
+          POSTGRES_PASSWORD: anchor
+          POSTGRES_DB: anchor_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgresql://anchor:anchor@localhost/anchor_test
+      REDIS_URL: redis://localhost:6379/0
+      ENCRYPTION_KEY: "00000000000000000000000000000000"
+      GITHUB_CLIENT_ID: test
+      GITHUB_CLIENT_SECRET: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Set up database
+        run: bundle exec rails db:schema:load
+
+      - name: Run tests
+        run: bundle exec rspec --format progress
+
+# ── 2. Security scan ─────────────────────────────────────────────────────────
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Brakeman
+        run: bin/brakeman --no-pager -q -w3
+
+      - name: Bundle audit
+        run: |
+          gem install bundler-audit --no-document
+          bundle-audit check --update
+
+# ── 3. Build & deploy ────────────────────────────────────────────────────────
   deploy:
     name: Build & deploy to production
     runs-on: ubuntu-latest
-
-    env:
-      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-      REGION: ${{ secrets.GCP_REGION }}
-      SERVICE: anchor-prod
-      IMAGE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/anchor/app
+    needs: [test, security]   # ← never deploys unless both jobs above pass
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
+      # Authenticate with GCP using a service account key stored in GitHub Secrets.
+      # The SA needs: Artifact Registry Writer, Cloud Run Admin, Cloud Run Jobs Admin,
+      # Service Account User, Cloud SQL Client.
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
+      # Ensure the Artifact Registry repo exists (idempotent — safe to run every deploy).
       - name: Ensure Artifact Registry repository exists
         run: |
           gcloud artifacts repositories describe anchor \
             --location=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} 2>/dev/null || \
+            --project=${{ env.PROJECT_ID }} \
+          > /dev/null 2>&1 || \
           gcloud artifacts repositories create anchor \
             --repository-format=docker \
             --location=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }}
+            --project=${{ env.PROJECT_ID }} \
+            --description="Anchor production images"
 
+      # Enable buildx for layer caching via GitHub Actions cache.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Build and push — two tags: immutable SHA (used for deploy) and mutable latest.
+      # Layer cache is stored in GitHub Actions cache; typically saves 2–4 min.
       - name: Build and push Docker image
-        run: |
-          docker build \
-            --tag ${{ env.IMAGE }}:${{ github.sha }} \
-            --tag ${{ env.IMAGE }}:latest \
-            .
-          docker push ${{ env.IMAGE }}:${{ github.sha }}
-          docker push ${{ env.IMAGE }}:latest
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false   # keeps the manifest simple; avoids Artifact Registry multi-arch issues
 
+      # Run migrations as a Cloud Run Job before deploying the new service revision.
+      # The job is recreated on every deploy so it always uses the current image.
+      # --wait blocks until the execution finishes; non-zero exit code fails the pipeline.
       - name: Run database migrations
         run: |
-          gcloud run jobs delete migrate-prod --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --quiet 2>/dev/null || true
-          gcloud run jobs create migrate-prod \
+          # Tear down any previous migration job (image may be stale).
+          gcloud run jobs delete ${{ env.MIGRATE_JOB }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet 2>/dev/null || true
+
+          gcloud run jobs create ${{ env.MIGRATE_JOB }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
+            --command=bundle \
+            --args=exec,rails,db:migrate \
+            --max-retries=1 \
+            --task-timeout=600 \
+            --memory=512Mi \
+            --cpu=1 \
             --set-env-vars="RAILS_ENV=production" \
+            --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
             --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
-            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
-            --command="/rails/bin/rails" \
-            --args="db:migrate" \
-            --execute-now
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}"
 
-      - name: Deploy web to Cloud Run (production)
+          # Execute the job and wait for completion (fails CI if migration fails).
+          gcloud run jobs execute ${{ env.MIGRATE_JOB }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --wait
+
+      # Deploy the web service. Uses the SHA-tagged image so rollbacks are precise.
+      # min-instances=0 enables scale-to-zero; raise to 1 to eliminate cold starts.
+      - name: Deploy web service to Cloud Run
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
@@ -74,54 +188,69 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --platform=managed \
             --allow-unauthenticated \
+            --port=8080 \
             --min-instances=0 \
-            --max-instances=3 \
+            --max-instances=5 \
             --memory=512Mi \
             --cpu=1 \
             --cpu-throttling \
-            --no-cpu-boost \
-            --port=8080 \
+            --timeout=60 \
             --set-env-vars="RAILS_ENV=production" \
             --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
             --set-env-vars="RAILS_SERVE_STATIC_FILES=true" \
-            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_PROD }}" \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
-            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}" \
             --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_PROD }}" \
             --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}" \
             --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}" \
-            --set-env-vars="ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+            --set-env-vars="GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --set-env-vars="GITHUB_WEBHOOK_SECRET=${{ secrets.GH_WEBHOOK_SECRET }}" \
+            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
 
-      - name: Deploy Sidekiq worker to Cloud Run (production)
+      # Deploy the Sidekiq worker as a separate Cloud Run service.
+      # --cpu-always-allocated + --no-cpu-throttling: Sidekiq needs continuous CPU
+      # to poll Redis queues. min-instances=1 prevents cold-start queue delays.
+      - name: Deploy Sidekiq worker to Cloud Run
         run: |
-          gcloud run deploy anchor-worker \
+          gcloud run deploy ${{ env.WORKER }} \
             --image=${{ env.IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
             --platform=managed \
             --no-allow-unauthenticated \
+            --command=bundle \
+            --args=exec,sidekiq,-C,config/sidekiq.yml \
             --min-instances=1 \
             --max-instances=1 \
             --memory=1Gi \
             --cpu=1 \
             --cpu-always-allocated \
             --no-cpu-throttling \
-            --command=bundle \
-            --args=exec,sidekiq,-C,config/sidekiq.yml \
+            --timeout=3600 \
             --set-env-vars="RAILS_ENV=production" \
             --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
-            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_PROD }}" \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
-            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}" \
             --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_PROD }}" \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_PROD }}" \
             --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}" \
             --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}" \
-            --set-env-vars="ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
 
-      - name: Print production URL
+      - name: Print deployment summary
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
             --format='value(status.url)')
-          echo "Production: $URL"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✓ Production deployed successfully"
+          echo "  URL:    $URL"
+          echo "  Image:  ${{ env.IMAGE }}:${{ github.sha }}"
+          echo "  Commit: ${{ github.sha }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

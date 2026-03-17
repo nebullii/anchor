@@ -2,8 +2,9 @@ class SecretsController < ApplicationController
   before_action :set_project
 
   def index
-    @secrets = @project.secrets.ordered
-    @secret  = @project.secrets.new(key: params[:prefill_key])
+    @secrets        = @project.secrets.ordered
+    @secret         = @project.secrets.new(key: params[:prefill_key])
+    @detected_vars  = @project.detected_env_vars
   end
 
   def create
