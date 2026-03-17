@@ -1,0 +1,213 @@
+name: Deploy — Staging
+
+on:
+  push:
+    branches: [staging]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID:  ${{ secrets.GCP_PROJECT_ID }}
+  REGION:      ${{ secrets.GCP_REGION }}
+  SERVICE:     anchor-staging
+  WORKER:      anchor-worker-staging
+  MIGRATE_JOB: anchor-migrate-staging
+  IMAGE:       ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/anchor/app
+
+# ── 1. Tests ────────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: RSpec
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: anchor
+          POSTGRES_PASSWORD: anchor
+          POSTGRES_DB: anchor_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgresql://anchor:anchor@localhost/anchor_test
+      REDIS_URL: redis://localhost:6379/0
+      ENCRYPTION_KEY: "00000000000000000000000000000000"
+      GITHUB_CLIENT_ID: test
+      GITHUB_CLIENT_SECRET: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Set up database
+        run: bundle exec rails db:schema:load
+
+      - name: Run tests
+        run: bundle exec rspec --format progress
+
+# ── 2. Build & deploy ────────────────────────────────────────────────────────
+  deploy:
+    name: Build & deploy to staging
+    runs-on: ubuntu-latest
+    needs: [test]   # staging skips security scan for faster iteration
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Ensure Artifact Registry repository exists
+        run: |
+          gcloud artifacts repositories describe anchor \
+            --location=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+          > /dev/null 2>&1 || \
+          gcloud artifacts repositories create anchor \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --description="Anchor production images"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:staging
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Run database migrations
+        run: |
+          gcloud run jobs delete ${{ env.MIGRATE_JOB }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet 2>/dev/null || true
+
+          gcloud run jobs create ${{ env.MIGRATE_JOB }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --command=bundle \
+            --args=exec,rails,db:migrate \
+            --max-retries=1 \
+            --task-timeout=600 \
+            --memory=512Mi \
+            --cpu=1 \
+            --set-env-vars="RAILS_ENV=production" \
+            --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" \
+            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}"
+
+          gcloud run jobs execute ${{ env.MIGRATE_JOB }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --wait
+
+      - name: Deploy web service to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --min-instances=0 \
+            --max-instances=1 \
+            --memory=256Mi \
+            --cpu=1 \
+            --cpu-throttling \
+            --timeout=60 \
+            --set-env-vars="RAILS_ENV=production" \
+            --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
+            --set-env-vars="RAILS_SERVE_STATIC_FILES=true" \
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}" \
+            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_STAGING }}" \
+            --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}" \
+            --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}" \
+            --set-env-vars="GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --set-env-vars="GITHUB_WEBHOOK_SECRET=${{ secrets.GH_WEBHOOK_SECRET }}" \
+            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+
+      - name: Deploy Sidekiq worker to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.WORKER }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --command=/rails/bin/worker \
+            --min-instances=0 \
+            --max-instances=1 \
+            --memory=512Mi \
+            --cpu=1 \
+            --no-cpu-throttling \
+            --timeout=3600 \
+            --set-env-vars="RAILS_ENV=production" \
+            --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
+            --set-env-vars="RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}" \
+            --set-env-vars="SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}" \
+            --set-env-vars="ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}" \
+            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL_STAGING }}" \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_STAGING }}" \
+            --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}" \
+            --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}" \
+            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+
+      - name: Print deployment summary
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✓ Staging deployed successfully"
+          echo "  URL:    $URL"
+          echo "  Image:  ${{ env.IMAGE }}:${{ github.sha }}"
+          echo "  Commit: ${{ github.sha }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
