@@ -165,7 +165,7 @@ jobs:
             --args=exec,rails,db:migrate \
             --max-retries=1 \
             --task-timeout=600 \
-            --memory=256Mi \
+            --memory=512Mi \
             --cpu=1 \
             --set-env-vars="RAILS_ENV=production" \
             --set-env-vars="RAILS_LOG_TO_STDOUT=true" \
