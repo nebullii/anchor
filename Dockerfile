@@ -16,7 +16,7 @@ WORKDIR /rails
 
 # Install base packages + gcloud CLI (required for deployment jobs)
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client apt-transport-https ca-certificates gnupg && \
+    apt-get install --no-install-recommends -y curl git libjemalloc2 libvips postgresql-client apt-transport-https ca-certificates gnupg && \
     echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
       | tee /etc/apt/sources.list.d/google-cloud-sdk.list && \
     curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
