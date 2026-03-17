@@ -69,7 +69,8 @@ class RepositoryAnalysisJob < ApplicationJob
               #{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)} 2>&1`
 
     unless $?.success?
-      raise "git clone failed: #{output.lines.last(3).join}"
+      safe_output = output.gsub(clone_url, "[REDACTED]")
+      raise "git clone failed: #{safe_output.lines.last(3).join}"
     end
   end
 

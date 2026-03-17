@@ -61,6 +61,37 @@ class ProjectsController < ApplicationController
   end
 
   def deploy
+    if @project.has_active_deployment?
+      respond_to do |format|
+        format.turbo_stream do
+          render turbo_stream: turbo_stream.replace(
+            "notices",
+            partial: "shared/notice",
+            locals:  { message: "A deployment is already in progress.", alert: true }
+          )
+        end
+        format.html { redirect_to @project, alert: "A deployment is already in progress." }
+      end
+      return
+    end
+
+    unless current_user.within_deploy_quota?
+      respond_to do |format|
+        format.turbo_stream do
+          render turbo_stream: turbo_stream.replace(
+            "notices",
+            partial: "shared/notice",
+            locals:  { message: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow.", alert: true }
+          )
+        end
+        format.html do
+          redirect_to @project,
+                      alert: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow."
+        end
+      end
+      return
+    end
+
     missing = @project.missing_required_secrets
     if missing.any?
       respond_to do |format|
@@ -84,6 +115,7 @@ class ProjectsController < ApplicationController
       triggered_by: "manual",
       branch:       @project.production_branch
     )
+    current_user.increment_deploy_quota!
     DeploymentJob.perform_later(@deployment.id)
 
     respond_to do |format|
@@ -109,6 +141,15 @@ class ProjectsController < ApplicationController
   end
 
   def redeploy
+    if @project.has_active_deployment?
+      redirect_to @project, alert: "A deployment is already in progress." and return
+    end
+
+    unless current_user.within_deploy_quota?
+      redirect_to @project,
+                  alert: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow." and return
+    end
+
     last = @project.last_successful_deployment
     unless last
       redirect_to @project, alert: "No successful deployment to redeploy from." and return
@@ -122,6 +163,7 @@ class ProjectsController < ApplicationController
       commit_message: last.commit_message,
       commit_author:  last.commit_author
     )
+    current_user.increment_deploy_quota!
     DeploymentJob.perform_later(@deployment.id)
 
     respond_to do |format|

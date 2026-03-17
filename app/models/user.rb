@@ -79,9 +79,9 @@ class User < ApplicationRecord
     )
   end
 
-  # Returns a fresh access token, refreshing via Google if expired.
+  # Returns a fresh access token, refreshing via Google if expired or expiring soon.
   def fresh_google_access_token
-    return google_access_token if google_token_expires_at&.future?
+    return google_access_token if google_token_expires_at.present? && google_token_expires_at > 5.minutes.from_now
     fresh_google_token!
   end
 

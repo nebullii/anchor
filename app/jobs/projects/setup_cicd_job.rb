@@ -54,7 +54,10 @@ module Projects
       output = `git clone --depth=1 --branch #{Shellwords.escape(branch)} \
                 #{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)} 2>&1`
 
-      raise "git clone failed: #{output.lines.last(3).join}" unless $?.success?
+      unless $?.success?
+        safe_output = output.gsub(clone_url, "[REDACTED]")
+        raise "git clone failed: #{safe_output.lines.last(3).join}"
+      end
     end
 
     def generate_cicd_files(project, repo_path)
