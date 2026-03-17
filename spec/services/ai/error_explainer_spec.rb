@@ -11,26 +11,26 @@ RSpec.describe Ai::ErrorExplainer do
   subject(:explainer) { described_class.new(deployment) }
 
   describe "#call" do
-    context "when ANTHROPIC_API_KEY is not set" do
-      before { stub_const("ENV", ENV.to_h.merge("ANTHROPIC_API_KEY" => nil)) }
+    context "when OPENAI_API_KEY is not set" do
+      before { stub_const("ENV", ENV.to_h.merge("OPENAI_API_KEY" => nil)) }
 
       it "returns nil" do
         expect(explainer.call).to be_nil
       end
     end
 
-    context "when ANTHROPIC_API_KEY is set" do
-      before { stub_const("ENV", ENV.to_h.merge("ANTHROPIC_API_KEY" => "sk-test-key")) }
+    context "when OPENAI_API_KEY is set" do
+      before { stub_const("ENV", ENV.to_h.merge("OPENAI_API_KEY" => "sk-test-key")) }
 
       context "when the API returns a successful explanation" do
         let(:explanation) { "The Dockerfile is missing from the repository root. Create one or let Anchor generate it by re-running the analysis." }
 
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(
               status: 200,
               body: {
-                "content" => [{ "type" => "text", "text" => explanation }]
+                "choices" => [{ "message" => { "content" => explanation } }]
               }.to_json,
               headers: { "Content-Type" => "application/json" }
             )
@@ -43,10 +43,10 @@ RSpec.describe Ai::ErrorExplainer do
 
       context "when the API returns a blank response" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(
               status: 200,
-              body: { "content" => [{ "type" => "text", "text" => "   " }] }.to_json,
+              body: { "choices" => [{ "message" => { "content" => "   " } }] }.to_json,
               headers: { "Content-Type" => "application/json" }
             )
         end
@@ -58,7 +58,7 @@ RSpec.describe Ai::ErrorExplainer do
 
       context "when the API returns an error status" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(status: 429, body: "Rate limited")
         end
 
@@ -70,7 +70,7 @@ RSpec.describe Ai::ErrorExplainer do
 
       context "when the API connection times out" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_timeout
         end
 
@@ -81,11 +81,11 @@ RSpec.describe Ai::ErrorExplainer do
       end
 
       it "includes the error message in the request body" do
-        stub = stub_request(:post, "https://api.anthropic.com/v1/messages")
-          .with { |req| JSON.parse(req.body).dig("messages", 0, "content").include?("Dockerfile not found") }
+        stub = stub_request(:post, "https://api.openai.com/v1/chat/completions")
+          .with { |req| JSON.parse(req.body).dig("messages", 1, "content").include?("Dockerfile not found") }
           .to_return(
             status: 200,
-            body: { "content" => [{ "type" => "text", "text" => "Some explanation" }] }.to_json,
+            body: { "choices" => [{ "message" => { "content" => "Some explanation" } }] }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
 
@@ -95,11 +95,11 @@ RSpec.describe Ai::ErrorExplainer do
 
       it "includes the framework in the request body" do
         project.update_columns(framework: "rails")
-        stub = stub_request(:post, "https://api.anthropic.com/v1/messages")
-          .with { |req| JSON.parse(req.body).dig("messages", 0, "content").include?("rails") }
+        stub = stub_request(:post, "https://api.openai.com/v1/chat/completions")
+          .with { |req| JSON.parse(req.body).dig("messages", 1, "content").include?("rails") }
           .to_return(
             status: 200,
-            body: { "content" => [{ "type" => "text", "text" => "Some explanation" }] }.to_json,
+            body: { "choices" => [{ "message" => { "content" => "Some explanation" } }] }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
 
