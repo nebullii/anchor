@@ -1,0 +1,26 @@
+#!/usr/bin/env ruby
+# Entrypoint for the Sidekiq worker on Cloud Run.
+#
+# Cloud Run requires every service to listen on PORT for health checks.
+# Sidekiq doesn't serve HTTP, so we start a minimal WEBrick health server
+# in a background thread, then exec Sidekiq in the foreground.
+
+require "webrick"
+
+port = ENV.fetch("PORT", 8080).to_i
+
+server = WEBrick::HTTPServer.new(
+  Port:       port,
+  Logger:     WEBrick::Log.new("/dev/null"),
+  AccessLog:  []
+)
+
+server.mount_proc("/") do |_req, res|
+  res.status = 200
+  res.body   = "ok"
+end
+
+trap("TERM") { server.shutdown }
+Thread.new { server.start }
+
+exec "bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"
