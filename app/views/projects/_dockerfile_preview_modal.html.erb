@@ -1,0 +1,49 @@
+<div id="dockerfile_preview_modal"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
+     data-controller="modal">
+
+  <div class="relative w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-900 shadow-2xl overflow-hidden">
+
+    <%# Header %>
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+      <div>
+        <h2 class="text-sm font-semibold text-white">Dockerfile Preview</h2>
+        <p class="text-xs text-gray-500 mt-0.5">
+          Generated for <span class="font-mono text-indigo-300"><%= project.framework %></span> —
+          not yet written to your repository.
+        </p>
+      </div>
+      <button data-action="modal#close"
+              onclick="document.getElementById('dockerfile_preview_modal').remove()"
+              class="text-gray-600 hover:text-gray-300 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <%# Code block %>
+    <% if content.present? %>
+      <div class="overflow-y-auto max-h-[60vh]">
+        <pre class="p-5 text-xs font-mono text-gray-300 bg-gray-950 leading-relaxed whitespace-pre overflow-x-auto"><%= content %></pre>
+      </div>
+    <% else %>
+      <div class="px-5 py-8 text-sm text-gray-500 text-center">
+        No Dockerfile template available for <strong class="text-gray-400"><%= project.framework %></strong>.
+        <p class="text-xs mt-1 text-gray-600">This framework uses an existing Dockerfile from your repository.</p>
+      </div>
+    <% end %>
+
+    <%# Footer %>
+    <div class="px-5 py-3 border-t border-gray-800 bg-gray-900 flex items-center justify-between">
+      <p class="text-xs text-gray-600">
+        Anchor auto-generates this file during the build step when no Dockerfile exists.
+      </p>
+      <button onclick="document.getElementById('dockerfile_preview_modal').remove()"
+              class="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors">
+        Close
+      </button>
+    </div>
+
+  </div>
+</div>

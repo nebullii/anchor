@@ -1,7 +1,7 @@
 module Ai
   # Enriches deterministic analysis results with AI-powered insights.
   #
-  # Calls the Anthropic Messages API (claude-haiku-4-5 for speed/cost) with
+  # Calls the OpenAI Chat Completions API (gpt-4o-mini for speed/cost) with
   # a structured prompt that includes the deterministic analysis and asks the
   # model to:
   #   - Confirm / correct the detected framework and runtime
@@ -9,12 +9,12 @@ module Ai
   #   - Flag deployment warnings (e.g. missing health check, large image risk)
   #   - Suggest a concise description of what the app does
   #
-  # Degrades gracefully when ANTHROPIC_API_KEY is not set — the original
+  # Degrades gracefully when OPENAI_API_KEY is not set — the original
   # analysis result is returned unchanged.
   #
   class RepositoryAnalyzer
-    API_URL = "https://api.anthropic.com/v1/messages".freeze
-    MODEL   = "claude-haiku-4-5-20251001".freeze
+    API_URL = "https://api.openai.com/v1/chat/completions".freeze
+    MODEL   = "gpt-4o-mini".freeze
     TIMEOUT = 30
 
     def initialize(analysis_result, file_tree: [], readme: nil)
@@ -40,7 +40,7 @@ module Ai
     private
 
     def api_key
-      ENV["ANTHROPIC_API_KEY"]
+      ENV["OPENAI_API_KEY"]
     end
 
     def request_enrichment
@@ -52,20 +52,20 @@ module Ai
       end
 
       response = conn.post do |req|
-        req.headers["x-api-key"]         = api_key
-        req.headers["anthropic-version"]  = "2023-06-01"
+        req.headers["Authorization"] = "Bearer #{api_key}"
         req.body = {
           model:      MODEL,
           max_tokens: 1024,
-          system:     system_prompt,
-          messages:   [{ role: "user", content: user_message }]
+          messages:   [
+            { role: "system", content: system_prompt },
+            { role: "user",   content: user_message  }
+          ]
         }
       end
 
       return nil unless response.success?
 
-      body  = response.body
-      text  = body.dig("content", 0, "text").to_s
+      text = response.body.dig("choices", 0, "message", "content").to_s
       parse_json_block(text)
     end
 
@@ -140,10 +140,10 @@ module Ai
           .select { |v| v["key"].present? }
           .map do |v|
             {
-              "key" => v["key"].to_s.upcase,
+              "key"        => v["key"].to_s.upcase,
               "confidence" => normalize_env_confidence(v["confidence"]),
-              "required" => v["required"] == true,
-              "reason" => v["reason"].to_s.presence
+              "required"   => v["required"] == true,
+              "reason"     => v["reason"].to_s.presence
             }
           end
           .uniq { |v| v["key"] }
@@ -154,12 +154,9 @@ module Ai
 
     def normalize_env_confidence(value)
       case value.to_s.downcase
-      when "high"
-        "high"
-      when "review_required", "low"
-        "review_required"
-      else
-        "possible"
+      when "high"             then "high"
+      when "review_required", "low" then "review_required"
+      else                         "possible"
       end
     end
   end

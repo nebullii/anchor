@@ -7,7 +7,8 @@ class DeploymentsController < ApplicationController
   end
 
   def show
-    @logs = @deployment.deployment_logs.chronological
+    @logs   = @deployment.deployment_logs.chronological
+    @events = @deployment.deployment_events.chronological
   end
 
   def cancel

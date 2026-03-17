@@ -1,15 +1,15 @@
 module Ai
   # Generates a human-friendly explanation for a failed deployment.
   #
-  # Sends the raw error message and recent deployment logs to Claude and
+  # Sends the raw error message and recent deployment logs to OpenAI and
   # returns a short, actionable explanation of what went wrong and how to
   # fix it.
   #
-  # Degrades gracefully when ANTHROPIC_API_KEY is not set.
+  # Degrades gracefully when OPENAI_API_KEY is not set.
   #
   class ErrorExplainer
-    API_URL   = "https://api.anthropic.com/v1/messages".freeze
-    MODEL     = "claude-haiku-4-5-20251001".freeze
+    API_URL   = "https://api.openai.com/v1/chat/completions".freeze
+    MODEL     = "gpt-4o-mini".freeze
     TIMEOUT   = 20
     MAX_CHARS = 8_000  # keep prompt cost low
 
@@ -31,7 +31,7 @@ module Ai
     private
 
     def api_key
-      ENV["ANTHROPIC_API_KEY"]
+      ENV["OPENAI_API_KEY"]
     end
 
     def request_explanation
@@ -43,19 +43,20 @@ module Ai
       end
 
       response = conn.post do |req|
-        req.headers["x-api-key"]         = api_key
-        req.headers["anthropic-version"]  = "2023-06-01"
+        req.headers["Authorization"] = "Bearer #{api_key}"
         req.body = {
           model:      MODEL,
           max_tokens: 512,
-          system:     system_prompt,
-          messages:   [{ role: "user", content: user_message }]
+          messages:   [
+            { role: "system", content: system_prompt },
+            { role: "user",   content: user_message  }
+          ]
         }
       end
 
       return nil unless response.success?
 
-      response.body.dig("content", 0, "text")
+      response.body.dig("choices", 0, "message", "content")
     end
 
     def system_prompt

@@ -50,12 +50,18 @@
           <span class="text-gray-500">Port</span>
           <span class="text-gray-200 font-mono"><%= result["port"] %></span>
         </div>
-        <div class="flex justify-between">
+        <div class="flex justify-between items-center">
           <span class="text-gray-500">Dockerfile</span>
           <% if result["has_dockerfile"] %>
             <span class="text-emerald-400 text-xs">Found ✓</span>
           <% else %>
-            <span class="text-gray-400 text-xs">Will be generated</span>
+            <div class="flex items-center gap-2">
+              <span class="text-gray-400 text-xs">Will be generated</span>
+              <%= link_to "Preview",
+                    dockerfile_preview_project_path(project),
+                    data: { turbo_stream: "" },
+                    class: "text-xs text-indigo-400 hover:text-indigo-300 underline" %>
+            </div>
           <% end %>
         </div>
       </div>
