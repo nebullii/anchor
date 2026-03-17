@@ -44,8 +44,8 @@ class Rack::Attack
   # ------------------------------------------------------------------ #
   # Response for throttled requests                                      #
   # ------------------------------------------------------------------ #
-  self.throttled_responder = lambda do |env|
-    retry_after = (env["rack.attack.match_data"] || {})[:period]
+  self.throttled_responder = lambda do |request|
+    retry_after = (request.env["rack.attack.match_data"] || {})[:period]
     [
       429,
       {
