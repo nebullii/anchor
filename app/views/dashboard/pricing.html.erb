@@ -1,205 +1,240 @@
 <% content_for :title, "Pricing — Anchor" %>
 
 <%# ── Hero ──────────────────────────────────────────────────────────── %>
-<section class="pt-16 pb-12 text-center">
-  <div class="inline-flex items-center gap-2 border border-[var(--anchor-border)] rounded-full px-3 py-1 text-xs text-[var(--anchor-muted)] mb-8">
-    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
-    No subscription. Ever.
-  </div>
-
-  <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-[var(--anchor-text)] mb-6 leading-tight">
-    Anchor is free.<br>
-    <span class="text-[var(--anchor-muted)]">You pay your cloud, not us.</span>
+<section class="pt-10 pb-8 text-center">
+  <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--anchor-text)] mb-2">
+    Simple pricing. Your cloud bill stays yours.
   </h1>
-
-  <p class="text-lg text-[var(--anchor-muted)] max-w-2xl mx-auto leading-relaxed">
-    Render, Railway, and Heroku charge you every month — forever — to run your own code on their servers.
-    Anchor deploys straight to your Google Cloud account.
-    Your infra. Your data. Your bill — and it's a fraction of the cost.
+  <p class="text-sm text-[var(--anchor-muted)]">
+    Pay Anchor for the platform. GCP for the compute — at Google's rates, no markup.
   </p>
 </section>
 
-<div class="border-t border-[var(--anchor-border)]"></div>
+<%# ── Pricing tiers ────────────────────────────────────────────────── %>
+<section class="pb-12">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl mx-auto">
 
-<%# ── Cost comparison ────────────────────────────────────────────────── %>
-<section class="py-16">
-  <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-12">What you actually pay</p>
-
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
-
-    <%# Anchor + GCP %>
-    <div class="border-2 border-emerald-700/60 rounded-2xl overflow-hidden">
-      <div class="bg-emerald-950/30 px-6 py-5 border-b border-emerald-700/40">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide mb-1">Anchor + Google Cloud Run</p>
-            <p class="text-3xl font-bold text-[var(--anchor-text)]">$0 <span class="text-lg font-normal text-[var(--anchor-muted)]">/ month to start</span></p>
-          </div>
-          <span class="text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-700/50 px-3 py-1.5 rounded-full">Recommended</span>
-        </div>
-        <p class="text-sm text-[var(--anchor-muted)] mt-3">Anchor is free. GCP charges only for what you use — and most small apps fit inside the free tier.</p>
+    <%# Hobby %>
+    <div class="border border-[var(--anchor-border)] rounded-xl p-5 flex flex-col">
+      <p class="text-xs font-semibold text-[var(--anchor-muted)] uppercase tracking-wide mb-3">Hobby</p>
+      <div class="flex items-end gap-1 mb-1">
+        <span class="text-3xl font-bold text-[var(--anchor-text)]">$0</span>
+        <span class="text-xs text-[var(--anchor-muted)] mb-1.5">/ month</span>
       </div>
-      <div class="px-6 py-5">
-        <p class="text-xs font-semibold text-[var(--anchor-text)] mb-4 uppercase tracking-wide">Typical monthly GCP costs</p>
-        <ul class="space-y-3 text-sm">
-          <% [
-            ["Side project / hobby app", "$0 – $2", "Fits inside GCP free tier (2M requests/month, 360k vCPU-seconds)"],
-            ["Small production app", "$3 – $15", "Light traffic, 1 vCPU, 512 MB RAM"],
-            ["Growing startup", "$15 – $60", "Moderate traffic, autoscaling, multiple services"],
-            ["High-traffic app", "Scales with use", "Pay-per-request, no idle cost when traffic drops to zero"],
-          ].each do |tier, price, note| %>
-            <li class="flex items-start justify-between gap-4 pb-3 border-b border-[var(--anchor-border)] last:border-0 last:pb-0">
-              <div>
-                <p class="font-medium text-[var(--anchor-text)]"><%= tier %></p>
-                <p class="text-xs text-[var(--anchor-muted)] mt-0.5"><%= note %></p>
-              </div>
-              <span class="text-sm font-mono font-semibold text-emerald-400 whitespace-nowrap"><%= price %></span>
-            </li>
-          <% end %>
-        </ul>
-        <p class="text-xs text-[var(--anchor-muted)] mt-4">Cloud Run scales to zero — you pay nothing when your app isn't receiving traffic.</p>
-      </div>
-    </div>
+      <p class="text-xs text-[var(--anchor-muted)] mb-4">Side projects and personal experiments.</p>
 
-    <%# The alternatives %>
-    <div class="border border-[var(--anchor-border)] rounded-2xl overflow-hidden opacity-80">
-      <div class="px-6 py-5 border-b border-[var(--anchor-border)]">
-        <p class="text-xs font-semibold text-[var(--anchor-muted)] uppercase tracking-wide mb-1">Managed PaaS alternatives</p>
-        <p class="text-3xl font-bold text-[var(--anchor-text)]">$7 – $500 <span class="text-lg font-normal text-[var(--anchor-muted)]">/ month</span></p>
-        <p class="text-sm text-[var(--anchor-muted)] mt-3">Flat monthly fees that keep growing as you scale — on their servers, under their terms.</p>
-      </div>
-      <div class="px-6 py-5">
-        <p class="text-xs font-semibold text-[var(--anchor-text)] mb-4 uppercase tracking-wide">Typical monthly costs</p>
-        <ul class="space-y-3 text-sm">
-          <% [
-            ["Heroku Eco / Basic", "$5 – $25", "Sleeps after 30 min inactivity on cheap tiers"],
-            ["Render Starter", "$7 – $25", "Per service, per month"],
-            ["Railway Hobby", "$5 + usage", "Pro plan $20/month minimum"],
-            ["Fly.io", "$5 – $30+", "Billed per machine-hour"],
-          ].each do |platform, price, note| %>
-            <li class="flex items-start justify-between gap-4 pb-3 border-b border-[var(--anchor-border)] last:border-0 last:pb-0">
-              <div>
-                <p class="font-medium text-[var(--anchor-text)]"><%= platform %></p>
-                <p class="text-xs text-[var(--anchor-muted)] mt-0.5"><%= note %></p>
-              </div>
-              <span class="text-sm font-mono font-semibold text-[var(--anchor-muted)] whitespace-nowrap"><%= price %></span>
-            </li>
-          <% end %>
-        </ul>
-        <p class="text-xs text-[var(--anchor-muted)] mt-4">These platforms also own your deployment pipeline. Move off them and you start from scratch.</p>
-      </div>
-    </div>
-
-  </div>
-</section>
-
-<div class="border-t border-[var(--anchor-border)]"></div>
-
-<%# ── What's always free ──────────────────────────────────────────────── %>
-<section class="py-16">
-  <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-12">What's always free</p>
-
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
-    <% [
-      ["Anchor itself", "No seat fees, no tiers, no \"pro\" features gated behind a paywall."],
-      ["Unlimited projects", "Deploy as many repos as your GCP quota allows."],
-      ["Live log streaming", "Real-time build and deploy logs straight to your browser."],
-      ["Framework detection", "Automatic Dockerfile generation for every supported framework."],
-      ["AI error explanation", "Claude reads your failed build and tells you what went wrong."],
-      ["Encrypted secrets", "AES-256 encrypted env vars, stored in your own database."],
-    ].each do |title, desc| %>
-      <div class="border border-[var(--anchor-border)] rounded-xl p-5">
-        <div class="flex items-center gap-2 mb-2">
-          <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-          </svg>
-          <h3 class="text-sm font-semibold text-[var(--anchor-text)]"><%= title %></h3>
-        </div>
-        <p class="text-sm text-[var(--anchor-muted)] leading-relaxed pl-6"><%= desc %></p>
-      </div>
-    <% end %>
-  </div>
-</section>
-
-<div class="border-t border-[var(--anchor-border)]"></div>
-
-<%# ── GCP free tier callout ──────────────────────────────────────────── %>
-<section class="py-16 max-w-3xl mx-auto">
-  <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-8">Google Cloud free tier</p>
-  <div class="border border-[var(--anchor-border)] rounded-2xl overflow-hidden">
-    <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--anchor-border)]">
-      <% [
-        ["2M", "requests / month", "Cloud Run"],
-        ["360K", "vCPU-seconds / month", "Compute"],
-        ["1 GB", "outbound / month", "Networking"],
-      ].each do |amount, unit, label| %>
-        <div class="px-6 py-6 text-center">
-          <p class="text-3xl font-bold text-[var(--anchor-text)] font-mono"><%= amount %></p>
-          <p class="text-xs text-[var(--anchor-muted)] mt-1"><%= unit %></p>
-          <p class="text-xs text-emerald-400 mt-1 font-medium"><%= label %></p>
-        </div>
+      <%= button_to "/auth/github", data: { turbo: false },
+            class: "w-full text-center text-xs font-medium px-3 py-2 rounded-lg border border-[var(--anchor-border)] text-[var(--anchor-text)] hover:border-[var(--anchor-muted)] transition-colors cursor-pointer mb-5" do %>
+        Get started free
       <% end %>
+
+      <ul class="space-y-2 text-xs flex-1">
+        <% [
+          ["3 projects", nil],
+          ["30 deployments / month", nil],
+          ["Shared build resources", nil],
+          ["Framework auto-detection", nil],
+          ["Live build logs", nil],
+          ["Encrypted secrets", nil],
+          ["Webhook auto-deploy", nil],
+          ["AI analysis & error explanation", :locked],
+        ].each do |label, state| %>
+          <li class="flex items-center gap-2 <%= state == :locked ? 'opacity-35' : '' %>">
+            <% if state == :locked %>
+              <svg class="w-3.5 h-3.5 text-[var(--anchor-muted)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            <% else %>
+              <svg class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+            <% end %>
+            <span class="<%= state == :locked ? 'text-[var(--anchor-muted)]' : 'text-[var(--anchor-text)]' %>"><%= label %></span>
+          </li>
+        <% end %>
+      </ul>
     </div>
-    <div class="border-t border-[var(--anchor-border)] px-6 py-4 bg-[var(--anchor-surface)]/30">
-      <p class="text-xs text-[var(--anchor-muted)] text-center">
-        Most side projects and internal tools run entirely within these limits. Charges only apply when you exceed them.
-        <a href="https://cloud.google.com/run/pricing" target="_blank" rel="noopener" class="text-[var(--anchor-text)] underline underline-offset-2 hover:no-underline ml-1">See GCP pricing →</a>
+
+    <%# Pro %>
+    <div class="border-2 border-emerald-700/50 rounded-xl p-5 flex flex-col relative bg-emerald-950/10">
+      <div class="flex items-center justify-between mb-3">
+        <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Pro</p>
+        <span class="text-xs font-medium text-emerald-400 bg-emerald-950/60 border border-emerald-700/50 px-2 py-0.5 rounded-full">Popular</span>
+      </div>
+      <div class="flex items-end gap-1 mb-1">
+        <span class="text-3xl font-bold text-[var(--anchor-text)]">$19</span>
+        <span class="text-xs text-[var(--anchor-muted)] mb-1.5">/ month</span>
+      </div>
+      <p class="text-xs text-[var(--anchor-muted)] mb-4">Up to 50 projects, AI features, priority support.</p>
+
+      <%= button_to "/auth/github", data: { turbo: false },
+            class: "w-full text-center text-xs font-semibold px-3 py-2 rounded-lg transition-colors cursor-pointer mb-5",
+            style: "background: var(--anchor-accent); color: var(--anchor-bg-1);" do %>
+        Start free 14-day trial
+      <% end %>
+
+      <ul class="space-y-2 text-xs flex-1">
+        <% [
+          "Up to 50 projects",
+          "100 deployments / month",
+          "Limited build resources ¹",
+          "Everything in Hobby",
+          "AI repository analysis",
+          "AI error explanation",
+          "Priority email support",
+        ].each do |label| %>
+          <li class="flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span class="text-[var(--anchor-text)]"><%= label %></span>
+          </li>
+        <% end %>
+      </ul>
+
+      <p class="text-xs text-[var(--anchor-muted)] mt-4 pt-3 border-t border-emerald-700/20">
+        ¹ Runs on GCP Cloud Build's free tier — 120 build-min/day. Fine for most apps; large monorepos may hit the cap.
       </p>
     </div>
+
+    <%# Business %>
+    <div class="border border-[var(--anchor-border)] rounded-xl p-5 flex flex-col">
+      <p class="text-xs font-semibold text-[var(--anchor-muted)] uppercase tracking-wide mb-3">Business</p>
+      <div class="flex items-end gap-1 mb-1">
+        <span class="text-3xl font-bold text-[var(--anchor-text)]">$49</span>
+        <span class="text-xs text-[var(--anchor-muted)] mb-1.5">/ month</span>
+      </div>
+      <p class="text-xs text-[var(--anchor-muted)] mb-4">Teams, higher limits, dedicated resources and SLA.</p>
+
+      <a href="mailto:hello@anchor.dev"
+         class="block w-full text-center text-xs font-medium px-3 py-2 rounded-lg border border-[var(--anchor-border)] text-[var(--anchor-text)] hover:border-[var(--anchor-muted)] transition-colors mb-5">
+        Contact us
+      </a>
+
+      <ul class="space-y-2 text-xs flex-1">
+        <% [
+          ["Unlimited projects", nil],
+          ["500 deployments / month", nil],
+          ["Dedicated build resources", nil],
+          ["Everything in Pro", nil],
+          ["Team members", :soon],
+          ["Audit logs", :soon],
+          ["SSO / Google Workspace", nil],
+          ["Dedicated support + SLA", nil],
+        ].each do |item| %>
+          <% label, state = Array(item) %>
+          <li class="flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span class="text-[var(--anchor-text)]">
+              <%= label %>
+              <% if state == :soon %>
+                <span class="text-[var(--anchor-muted)]">(soon)</span>
+              <% end %>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+
+  </div>
+  <p class="text-center text-xs text-[var(--anchor-muted)] mt-4">No credit card required to start. Cancel anytime. Prices in USD.</p>
+</section>
+
+<div class="border-t border-[var(--anchor-border)]"></div>
+
+<%# ── Cost comparison (compact) ───────────────────────────────────── %>
+<section class="py-12 max-w-5xl mx-auto">
+  <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-8">Your total cost vs. managed PaaS</p>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+
+    <div class="border border-emerald-700/40 rounded-xl bg-emerald-950/10 p-5">
+      <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide mb-4">Anchor Pro + GCP (your bill)</p>
+      <div class="space-y-2.5 text-sm">
+        <% [
+          ["Side project",   "$19 + ~$0",    "GCP free tier covers most hobby apps"],
+          ["Small app",      "$19 + ~$10",   "Light traffic, 512 MB, autoscaled"],
+          ["Growing startup","$49 + ~$40",   "Multiple services, Cloud SQL, more traffic"],
+        ].each do |tier, total, note| %>
+          <div class="flex items-center justify-between gap-3 py-2 border-b border-emerald-700/20 last:border-0">
+            <div>
+              <p class="font-medium text-[var(--anchor-text)]"><%= tier %></p>
+              <p class="text-xs text-[var(--anchor-muted)]"><%= note %></p>
+            </div>
+            <span class="font-mono text-sm font-semibold text-emerald-400 whitespace-nowrap"><%= total %></span>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="border border-[var(--anchor-border)] rounded-xl p-5 opacity-70">
+      <p class="text-xs font-semibold text-[var(--anchor-muted)] uppercase tracking-wide mb-4">Managed PaaS (platform + compute)</p>
+      <div class="space-y-2.5 text-sm">
+        <% [
+          ["Heroku Basic",  "$7 – $50",  "Per dyno/month, no scale-to-zero"],
+          ["Render",        "$7 – $50",  "Per service, charges when idle"],
+          ["Railway Pro",   "$20 + use", "$20 minimum + per-second on top"],
+        ].each do |platform, price, note| %>
+          <div class="flex items-center justify-between gap-3 py-2 border-b border-[var(--anchor-border)] last:border-0">
+            <div>
+              <p class="font-medium text-[var(--anchor-text)]"><%= platform %></p>
+              <p class="text-xs text-[var(--anchor-muted)]"><%= note %></p>
+            </div>
+            <span class="font-mono text-sm font-semibold text-[var(--anchor-muted)] whitespace-nowrap"><%= price %></span>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
   </div>
 </section>
 
 <div class="border-t border-[var(--anchor-border)]"></div>
 
-<%# ── FAQ ───────────────────────────────────────────────────────────── %>
-<section class="py-16 max-w-2xl mx-auto">
-  <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-12">Common questions</p>
+<%# ── FAQ (condensed) ───────────────────────────────────────────────── %>
+<section class="py-12 max-w-3xl mx-auto">
+  <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-8">Common questions</p>
 
-  <div class="space-y-8">
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-7">
     <% [
-      [
-        "Do I need a credit card to use Anchor?",
-        "Not for Anchor itself — it's free. You will need billing enabled on your Google Cloud project to deploy (GCP requires this even for free-tier usage). GCP won't charge you until you exceed the free tier."
-      ],
-      [
-        "Will I get a surprise bill from Google?",
-        "Unlikely for small apps. Cloud Run scales to zero, so you pay nothing when your app isn't handling requests. For a side project or internal tool, expect $0–$5/month. You can set GCP billing alerts to notify you before costs exceed any threshold you choose."
-      ],
-      [
-        "What GCP setup do I need before deploying?",
-        "A GCP project with billing enabled and either a Google account connected via OAuth in Anchor settings, or a service account key. Anchor automatically enables the required APIs (Cloud Build, Cloud Run, Artifact Registry) and creates the container registry on your first deploy."
-      ],
-      [
-        "Does Anchor store my code?",
-        "Anchor clones your repo into a temporary directory during the build, submits it to Cloud Build in your GCP project, then deletes the local copy. Your source code is never stored on Anchor's servers."
-      ],
-      [
-        "What happens when I stop using Anchor?",
-        "Your Cloud Run services keep running — they're in your GCP account, not ours. You can manage, scale, or delete them directly in the Google Cloud Console at any time."
-      ],
-      [
-        "Is there a limit on how many deploys I can run?",
-        "20 deploys per day and 200 per month per account. These limits exist to protect GCP quota — contact us if you need them raised."
-      ],
-    ].each do |question, answer| %>
-      <div class="border-b border-[var(--anchor-border)] pb-8 last:border-0">
-        <h3 class="text-sm font-semibold text-[var(--anchor-text)] mb-2"><%= question %></h3>
-        <p class="text-sm text-[var(--anchor-muted)] leading-relaxed"><%= answer %></p>
+      ["What's in the 14-day trial?",
+       "Full Pro access — unlimited projects, AI features, priority support. No card needed. Downgrades to Hobby automatically."],
+      ["What are 'limited build resources'?",
+       "Builds run on GCP Cloud Build's free tier (120 build-minutes/day shared). Fine for most apps; large monorepos may hit the cap. Business gets dedicated quota."],
+      ["Will I get a surprise GCP bill?",
+       "Unlikely. Cloud Run scales to zero so you pay nothing at idle. Set GCP billing alerts to cap your spend."],
+      ["Does Anchor store my code?",
+       "No. Your repo is cloned during build, submitted to Cloud Build in your GCP project, then deleted. Nothing is stored on Anchor's servers."],
+      ["What happens if I cancel?",
+       "Your Cloud Run services keep running in your GCP account. Anchor is the control plane — not the host."],
+      ["Can I change plans anytime?",
+       "Yes. Upgrade instantly, downgrade at the end of your billing cycle. Existing projects keep working on Hobby up to the 3-project limit."],
+    ].each do |q, a| %>
+      <div>
+        <h3 class="text-sm font-semibold text-[var(--anchor-text)] mb-1"><%= q %></h3>
+        <p class="text-sm text-[var(--anchor-muted)] leading-relaxed"><%= a %></p>
       </div>
     <% end %>
   </div>
 </section>
 
-<%# ── CTA ────────────────────────────────────────────────────────────── %>
-<section class="py-16 text-center border-t border-[var(--anchor-border)]">
-  <h2 class="text-3xl font-bold text-[var(--anchor-text)] mb-4">Start for free</h2>
-  <p class="text-[var(--anchor-muted)] mb-8 max-w-md mx-auto">Sign in with GitHub, connect your Google Cloud account, and deploy your first app in under five minutes.</p>
-  <%= button_to "/auth/github", data: { turbo: false },
-        class: "inline-flex items-center gap-2.5 font-semibold text-sm px-6 py-3 rounded-lg transition-colors cursor-pointer",
-        style: "background: var(--anchor-accent); color: var(--anchor-bg-1);" do %>
-    <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
-    </svg>
-    Deploy your first app free
-  <% end %>
+<%# ── CTA ───────────────────────────────────────────────────────────── %>
+<section class="py-12 text-center border-t border-[var(--anchor-border)]">
+  <h2 class="text-2xl font-bold text-[var(--anchor-text)] mb-3">Start free. Upgrade when you're ready.</h2>
+  <p class="text-sm text-[var(--anchor-muted)] mb-6 max-w-sm mx-auto">Connect GitHub, add your GCP account, deploy in under five minutes.</p>
+  <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+    <%= button_to "/auth/github", data: { turbo: false },
+          class: "inline-flex items-center gap-2.5 font-semibold text-sm px-6 py-2.5 rounded-lg transition-colors cursor-pointer",
+          style: "background: var(--anchor-accent); color: var(--anchor-bg-1);" do %>
+      <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.57v-2c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 013-.4c1.02 0 2.04.13 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .31.2.68.82.56C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
+      </svg>
+      Start free — no credit card
+    <% end %>
+    <a href="mailto:hello@anchor.dev" class="text-sm text-[var(--anchor-muted)] hover:text-[var(--anchor-text)] transition-colors">
+      Questions? Talk to us →
+    </a>
+  </div>
 </section>

@@ -6,12 +6,12 @@ module Ai
   #   - files: array of {path, content, description} objects to commit
   #     (Dockerfile if missing, .dockerignore if missing, .github/workflows/deploy.yml)
   #
-  # Uses claude-sonnet-4-6 for high-quality code generation.
-  # Degrades gracefully if ANTHROPIC_API_KEY is not set.
+  # Uses gpt-4o for high-quality code generation.
+  # Degrades gracefully if OPENAI_API_KEY is not set.
   #
   class CicdGenerator
-    API_URL = "https://api.anthropic.com/v1/messages".freeze
-    MODEL   = "claude-sonnet-4-6".freeze
+    API_URL = "https://api.openai.com/v1/chat/completions".freeze
+    MODEL   = "gpt-4o".freeze
     TIMEOUT = 90
 
     Result = Struct.new(:required_secrets, :files, keyword_init: true)
@@ -37,7 +37,7 @@ module Ai
     private
 
     def api_key
-      ENV["ANTHROPIC_API_KEY"]
+      ENV["OPENAI_API_KEY"]
     end
 
     def request_generation
@@ -49,19 +49,20 @@ module Ai
       end
 
       response = conn.post do |req|
-        req.headers["x-api-key"]        = api_key
-        req.headers["anthropic-version"] = "2023-06-01"
+        req.headers["Authorization"] = "Bearer #{api_key}"
         req.body = {
           model:      MODEL,
           max_tokens: 8192,
-          system:     system_prompt,
-          messages:   [{ role: "user", content: user_message }]
+          messages:   [
+            { role: "system", content: system_prompt },
+            { role: "user",   content: user_message  }
+          ]
         }
       end
 
       return nil unless response.success?
 
-      text = response.body.dig("content", 0, "text").to_s
+      text = response.body.dig("choices", 0, "message", "content").to_s
       parse_json_block(text)
     end
 
@@ -107,10 +108,10 @@ module Ai
       readme = read_readme
       parts << "## README\n#{readme.first(3_000)}" if readme.present?
 
-      has_dockerfile    = File.exist?(File.join(@repo_path, "Dockerfile"))
-      has_dockerignore  = File.exist?(File.join(@repo_path, ".dockerignore"))
-      has_gha_workflow  = Dir.glob(File.join(@repo_path, ".github/workflows/*.yml")).any? ||
-                          Dir.glob(File.join(@repo_path, ".github/workflows/*.yaml")).any?
+      has_dockerfile   = File.exist?(File.join(@repo_path, "Dockerfile"))
+      has_dockerignore = File.exist?(File.join(@repo_path, ".dockerignore"))
+      has_gha_workflow = Dir.glob(File.join(@repo_path, ".github/workflows/*.yml")).any? ||
+                         Dir.glob(File.join(@repo_path, ".github/workflows/*.yaml")).any?
 
       parts << <<~TASK
         ## Task

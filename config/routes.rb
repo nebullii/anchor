@@ -17,13 +17,18 @@ Rails.application.routes.draw do
   root "dashboard#index"
   get "/pricing", to: "dashboard#pricing", as: :pricing
 
+  # GitHub webhook receiver
+  post "/webhooks/github", to: "webhooks#github"
+
   resources :projects do
     member do
       post :deploy
+      post :redeploy
       post :analyze
       get  :setup_cicd
       post :generate_cicd
       post :commit_cicd
+      get  :dockerfile_preview
     end
     resources :deployments, only: %i[index show create] do
       member do

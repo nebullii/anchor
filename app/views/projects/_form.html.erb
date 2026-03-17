@@ -68,6 +68,16 @@
           class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" %>
   </div>
 
+  <%# Auto-deploy on push %>
+  <div class="flex items-start gap-3 p-4 rounded-lg border border-gray-800 bg-gray-900/50">
+    <%= f.check_box :auto_deploy,
+          class: "mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer" %>
+    <div>
+      <%= f.label :auto_deploy, "Auto-deploy on push", class: "block text-sm font-medium text-gray-300 cursor-pointer" %>
+      <p class="text-xs text-gray-500 mt-0.5">Automatically deploy when a push lands on the production branch via GitHub webhook.</p>
+    </div>
+  </div>
+
   <div class="pt-2">
     <%= f.submit project.new_record? ? "Create Project" : "Save Changes",
           class: "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors cursor-pointer" %>

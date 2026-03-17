@@ -1,4 +1,13 @@
 class DockerfileGenerator
+  PreviewDetection = Struct.new(:framework, :metadata, :port)
+
+  # Returns the Dockerfile content for a given framework and metadata hash
+  # without touching the filesystem — used for preview in the UI.
+  def self.preview(framework, metadata = {})
+    detection = PreviewDetection.new(framework, metadata, metadata["port"] || 8080)
+    new(nil, detection).send(:template_for, framework)
+  end
+
   def initialize(repo_path, detection)
     @repo_path = repo_path
     @detection = detection
