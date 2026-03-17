@@ -5,8 +5,8 @@ RSpec.describe Deployments::ExplainErrorJob, type: :job do
   let(:deployment) { create(:deployment, :failed, project: project, error_message: "Build failed") }
 
   describe "#perform" do
-    context "when ANTHROPIC_API_KEY is not set" do
-      before { stub_const("ENV", ENV.to_h.merge("ANTHROPIC_API_KEY" => nil)) }
+    context "when OPENAI_API_KEY is not set" do
+      before { stub_const("ENV", ENV.to_h.merge("OPENAI_API_KEY" => nil)) }
 
       it "does not update the deployment" do
         expect {
@@ -15,15 +15,15 @@ RSpec.describe Deployments::ExplainErrorJob, type: :job do
       end
     end
 
-    context "when ANTHROPIC_API_KEY is set" do
+    context "when OPENAI_API_KEY is set" do
       let(:explanation) { "The build failed because the Gemfile.lock is missing." }
 
       before do
-        stub_const("ENV", ENV.to_h.merge("ANTHROPIC_API_KEY" => "sk-test-key"))
-        stub_request(:post, "https://api.anthropic.com/v1/messages")
+        stub_const("ENV", ENV.to_h.merge("OPENAI_API_KEY" => "sk-test-key"))
+        stub_request(:post, "https://api.openai.com/v1/chat/completions")
           .to_return(
             status: 200,
-            body: { "content" => [{ "type" => "text", "text" => explanation }] }.to_json,
+            body: { "choices" => [{ "message" => { "content" => explanation } }] }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
       end

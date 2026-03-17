@@ -15,16 +15,16 @@ RSpec.describe Ai::RepositoryAnalyzer do
   subject(:analyzer) { described_class.new(base_result, file_tree: ["app/models/user.rb"], readme: "A web app") }
 
   describe "#call" do
-    context "when ANTHROPIC_API_KEY is not set" do
-      before { stub_const("ENV", ENV.to_h.merge("ANTHROPIC_API_KEY" => nil)) }
+    context "when OPENAI_API_KEY is not set" do
+      before { stub_const("ENV", ENV.to_h.merge("OPENAI_API_KEY" => nil)) }
 
       it "returns the original analysis result unchanged" do
         expect(analyzer.call).to eq(base_result)
       end
     end
 
-    context "when ANTHROPIC_API_KEY is set" do
-      before { stub_const("ENV", ENV.to_h.merge("ANTHROPIC_API_KEY" => "sk-test-key")) }
+    context "when OPENAI_API_KEY is set" do
+      before { stub_const("ENV", ENV.to_h.merge("OPENAI_API_KEY" => "sk-test-key")) }
 
       context "when the API returns a successful enrichment" do
         let(:api_response) do
@@ -40,11 +40,11 @@ RSpec.describe Ai::RepositoryAnalyzer do
         end
 
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(
               status: 200,
               body: {
-                "content" => [{ "type" => "text", "text" => api_response.to_json }]
+                "choices" => [{ "message" => { "content" => api_response.to_json } }]
               }.to_json,
               headers: { "Content-Type" => "application/json" }
             )
@@ -86,7 +86,7 @@ RSpec.describe Ai::RepositoryAnalyzer do
 
       context "when the API returns an error" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(status: 500, body: "Internal Server Error")
         end
 
@@ -97,7 +97,7 @@ RSpec.describe Ai::RepositoryAnalyzer do
 
       context "when the API times out" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_timeout
         end
 
@@ -109,10 +109,10 @@ RSpec.describe Ai::RepositoryAnalyzer do
 
       context "when the API returns malformed JSON" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(
               status: 200,
-              body: { "content" => [{ "type" => "text", "text" => "not json at all" }] }.to_json,
+              body: { "choices" => [{ "message" => { "content" => "not json at all" } }] }.to_json,
               headers: { "Content-Type" => "application/json" }
             )
         end
@@ -124,11 +124,11 @@ RSpec.describe Ai::RepositoryAnalyzer do
 
       context "when the API wraps JSON in prose" do
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(
               status: 200,
               body: {
-                "content" => [{ "type" => "text", "text" => 'Here is my analysis: {"app_description":"A simple app"}' }]
+                "choices" => [{ "message" => { "content" => 'Here is my analysis: {"app_description":"A simple app"}' } }]
               }.to_json,
               headers: { "Content-Type" => "application/json" }
             )
@@ -149,10 +149,10 @@ RSpec.describe Ai::RepositoryAnalyzer do
         end
 
         before do
-          stub_request(:post, "https://api.anthropic.com/v1/messages")
+          stub_request(:post, "https://api.openai.com/v1/chat/completions")
             .to_return(
               status: 200,
-              body: { "content" => [{ "type" => "text", "text" => api_response.to_json }] }.to_json,
+              body: { "choices" => [{ "message" => { "content" => api_response.to_json } }] }.to_json,
               headers: { "Content-Type" => "application/json" }
             )
         end
