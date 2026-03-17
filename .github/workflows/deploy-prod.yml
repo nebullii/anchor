@@ -223,8 +223,7 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --platform=managed \
             --no-allow-unauthenticated \
-            --command=bundle \
-            --args=exec,sidekiq,-C,config/sidekiq.yml \
+            --command=bin/worker \
             --min-instances=0 \
             --max-instances=1 \
             --memory=512Mi \
