@@ -124,7 +124,7 @@ class Project < ApplicationRecord
 
   def set_gcp_project_id
     return if draft?
-    self.gcp_project_id ||= user.gcp_project_from_key
+    self.gcp_project_id ||= user&.gcp_project_from_key
   end
 
   def set_slug
