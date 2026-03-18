@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_16_235712) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -83,8 +83,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_235712) do
     t.text "cicd_setup_error"
     t.string "cicd_setup_status", default: "none", null: false
     t.datetime "created_at", null: false
+    t.boolean "draft", default: false, null: false
     t.string "framework"
-    t.string "gcp_project_id", null: false
+    t.string "gcp_project_id"
     t.text "gcp_provision_error"
     t.boolean "gcp_provisioned", default: false, null: false
     t.datetime "gcp_provisioned_at"
@@ -98,6 +99,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_16_235712) do
     t.string "service_name"
     t.string "slug", null: false
     t.string "status", default: "inactive", null: false
+    t.string "target_platform", default: "gcp", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.string "webhook_secret"

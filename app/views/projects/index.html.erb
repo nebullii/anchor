@@ -5,19 +5,19 @@
     <h1 class="text-3xl font-semibold tracking-tight text-white">Projects</h1>
     <p class="mt-1 text-sm text-slate-400">Deployments with calm defaults, no setup maze.</p>
   </div>
-  <%= link_to new_project_path,
+  <%= link_to wizard_path,
         class: "btn-primary" do %>
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
     </svg>
-    New Project
+    Deploy new app
   <% end %>
 </div>
 
 <% if @projects.empty? %>
   <div class="surface-card border-dashed border-slate-600/70 p-16 text-center">
     <p class="mb-4 text-sm text-slate-400">No projects yet.</p>
-    <%= link_to "Create your first project", new_project_path,
+    <%= link_to "Deploy your first app", wizard_path,
           class: "text-sm font-medium text-blue-300 underline underline-offset-2 hover:text-blue-200" %>
   </div>
 <% else %>

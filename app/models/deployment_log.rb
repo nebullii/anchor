@@ -9,7 +9,7 @@ class DeploymentLog < ApplicationRecord
   # ------------------------------------------------------------------ #
   validates :message,   presence: true
   validates :level,     inclusion: { in: %w[debug info warn error] }
-  validates :source,    inclusion: { in: %w[system cloud_build cloud_run] }
+  validates :source,    inclusion: { in: %w[system cloud_build cloud_run gcp] }
   validates :logged_at, presence: true
 
   # ------------------------------------------------------------------ #

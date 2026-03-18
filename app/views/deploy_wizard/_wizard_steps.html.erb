@@ -1,0 +1,38 @@
+<%# locals: (current_step:) %>
+<%
+  steps = [
+    { num: 1, label: "Pick repo" },
+    { num: 2, label: "Scan code" },
+    { num: 3, label: "Configure & deploy" }
+  ]
+%>
+
+<div class="flex items-center gap-0 mb-10">
+  <% steps.each_with_index do |step, i| %>
+    <% done    = step[:num] < current_step %>
+    <% active  = step[:num] == current_step %>
+
+    <%# Step bubble %>
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
+                  <%= done ? 'bg-indigo-600 text-white' : active ? 'bg-indigo-600 text-white ring-4 ring-indigo-600/20' : 'bg-[var(--anchor-bg-2)] border border-[var(--anchor-border)] text-gray-600' %>">
+        <% if done %>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+          </svg>
+        <% else %>
+          <%= step[:num] %>
+        <% end %>
+      </div>
+      <span class="text-xs font-medium hidden sm:inline
+                   <%= active ? 'text-white' : done ? 'text-gray-500' : 'text-gray-700' %>">
+        <%= step[:label] %>
+      </span>
+    </div>
+
+    <%# Connector line %>
+    <% if i < steps.size - 1 %>
+      <div class="flex-1 h-px mx-3 <%= step[:num] < current_step ? 'bg-indigo-600' : 'bg-[var(--anchor-border)]' %>"></div>
+    <% end %>
+  <% end %>
+</div>

@@ -264,18 +264,18 @@
       <h1 class="text-3xl font-semibold tracking-tight">Dashboard</h1>
       <p class="mt-1 text-sm text-[var(--anchor-muted)]">Welcome back, <%= current_user.github_login %></p>
     </div>
-    <%= link_to new_project_path, class: "btn-primary" do %>
+    <%= link_to wizard_path, class: "btn-primary" do %>
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
       </svg>
-      New Project
+      Deploy new app
     <% end %>
   </div>
 
   <% if @projects.empty? %>
     <div class="surface-card border-dashed p-12 text-center">
       <p class="mb-4 text-sm text-[var(--anchor-muted)]">No projects yet.</p>
-      <%= link_to "Create your first project", new_project_path,
+      <%= link_to "Deploy your first app", wizard_path,
             class: "text-sm font-medium underline underline-offset-2 text-[var(--anchor-text)] hover:text-[var(--anchor-muted)]" %>
     </div>
   <% else %>

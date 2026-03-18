@@ -51,7 +51,7 @@
           </div>
         <% else %>
           <%# Connect button %>
-          <p class="text-xs text-gray-500 mb-3">Sign in with your Google account to grant Anchor access to Google Cloud Platform. No JSON key file needed.</p>
+          <p class="text-xs text-gray-500 mb-3">Sign in with your Google account. No JSON key file needed — Anchor handles the rest.</p>
           <%= button_to "/auth/google_oauth2",
                 method: :post,
                 data: { turbo: false },
@@ -76,7 +76,13 @@
 
       <%# ── Service Account Key (advanced / legacy) ─────────────────── %>
       <div>
-        <p class="text-xs font-semibold text-gray-400 mb-3">Service Account Key <span class="font-normal text-gray-600">(advanced)</span></p>
+        <p class="text-xs font-semibold text-gray-400 mb-1">Service Account Key <span class="font-normal text-gray-600">(advanced)</span></p>
+        <div class="mb-3 p-2.5 rounded-lg bg-amber-950/20 border border-amber-900/30 text-xs text-amber-700">
+          Use a service account with the <code class="text-amber-600">Editor</code> role.
+          <strong class="text-amber-600">Firebase Admin SDK keys won't work</strong> — they lack Cloud Run and Cloud Build permissions.
+          <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener"
+             class="text-amber-500 hover:text-amber-400 underline underline-offset-2 ml-1">Create one in GCP Console ↗</a>
+        </div>
 
         <% if !current_user.google_oauth_connected? && current_user.gcp_service_account_key.present? %>
           <div class="flex items-center gap-3 p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/40 mb-4">

@@ -1,4 +1,6 @@
 class SettingsController < ApplicationController
+  include GcpKeyValidation
+
   def show; end
 
   def gcp_credentials
@@ -10,12 +12,15 @@ class SettingsController < ApplicationController
 
     parsed = JSON.parse(key_json)
 
-    unless parsed["type"] == "service_account" && parsed["client_email"].present?
-      return redirect_to settings_path,
-                         alert: "Invalid service account key. Make sure you downloaded a Service Account JSON key."
+    if (error = validate_service_account_key(parsed))
+      return redirect_to settings_path, alert: error
     end
 
-    current_user.update!(gcp_service_account_key: key_json)
+    current_user.update!(
+      gcp_service_account_key:   key_json,
+      default_gcp_project_id:    parsed["project_id"],
+      gcp_service_account_email: parsed["client_email"]
+    )
     redirect_to settings_path, notice: "GCP credentials saved. You can now deploy projects."
 
   rescue JSON::ParserError

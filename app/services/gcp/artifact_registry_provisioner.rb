@@ -16,13 +16,7 @@ module Gcp
     def call
       yield "Ensuring Artifact Registry repository '#{REPOSITORY_ID}' exists…" if block_given?
 
-      @user.with_gcp_credentials_file do |key_path|
-        env = {
-          "GOOGLE_APPLICATION_CREDENTIALS"         => key_path,
-          "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE" => key_path,
-          "CLOUDSDK_CORE_DISABLE_PROMPTS"          => "1"
-        }
-
+      with_gcp_env do |env|
         # Check existence first; create only if missing.
         describe_cmd = "gcloud artifacts repositories describe #{REPOSITORY_ID} " \
                        "--location=#{Shellwords.escape(@region)} " \
@@ -54,6 +48,18 @@ module Gcp
       end
 
       "#{@region}-docker.pkg.dev/#{@gcp_project_id}/#{REPOSITORY_ID}"
+    end
+
+    private
+
+    def with_gcp_env
+      if @user.google_oauth_connected?
+        yield Gcp::ShellEnv.with_token(@user.fresh_google_token!)
+      else
+        @user.with_gcp_credentials_file do |key_path|
+          yield Gcp::ShellEnv.with_key(key_path)
+        end
+      end
     end
   end
 end

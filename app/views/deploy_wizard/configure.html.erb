@@ -1,0 +1,261 @@
+<% content_for :title, "Configure Deploy — Anchor" %>
+
+<div class="max-w-3xl mx-auto">
+  <%= render "deploy_wizard/wizard_steps", current_step: 3 %>
+
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-white">Configure your deployment</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Review what Anchor detected, connect GCP, and set any required environment variables.
+    </p>
+  </div>
+
+  <%# ── Analysis summary card ──────────────────────────────────────── %>
+  <% if @result.present? %>
+    <div class="surface-card p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">What Anchor detected</h2>
+        <% if @project.analysis_status == "failed" %>
+          <span class="text-xs text-red-400">Analysis failed</span>
+        <% end %>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <p class="text-xs text-gray-600 mb-1">Framework</p>
+          <p class="text-sm font-medium text-white capitalize"><%= @result["framework"] || "Unknown" %></p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-600 mb-1">Runtime</p>
+          <p class="text-sm font-medium text-white font-mono"><%= @result["runtime"] || "—" %></p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-600 mb-1">Port</p>
+          <p class="text-sm font-medium text-white font-mono"><%= @result["port"] || "auto" %></p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-600 mb-1">Dockerfile</p>
+          <% if @result["has_dockerfile"] %>
+            <p class="text-sm font-medium text-emerald-400">Found ✓</p>
+          <% else %>
+            <p class="text-sm font-medium text-gray-400">Will generate</p>
+          <% end %>
+        </div>
+      </div>
+
+      <% if @result["app_description"].present? %>
+        <p class="text-xs text-gray-500 italic mt-3 pt-3 border-t border-[var(--anchor-border)]"><%= @result["app_description"] %></p>
+      <% end %>
+
+      <% warnings = @result["warnings"] || [] %>
+      <% if warnings.any? %>
+        <div class="mt-3 pt-3 border-t border-[var(--anchor-border)]">
+          <% warnings.each do |w| %>
+            <p class="text-xs text-amber-400">⚠ <%= w %></p>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <%# ── Main form ─────────────────────────────────────────────────── %>
+  <%= form_with url: wizard_launch_path(@project), method: :post, class: "space-y-6" do |f| %>
+
+    <%# ── Platform ─────────────────────────────────────────────────── %>
+    <div class="surface-card p-5">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Deployment platform</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <%# GCP — active %>
+        <label class="relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-indigo-600 bg-indigo-950/20 cursor-pointer">
+          <input type="radio" name="target_platform" value="gcp" checked class="sr-only">
+          <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+            <path d="M24 9.6c3.36 0 6.4 1.12 8.8 2.96l3.52-3.52C33.6 6.72 29.04 4.8 24 4.8 16.32 4.8 9.84 9.44 7.04 16l4.32 3.36C13.12 13.68 18.08 9.6 24 9.6z" fill="#EA4335"/>
+            <path d="M43.2 24c0-1.12-.1-2.24-.28-3.2H24v6.08h10.88c-.48 2.48-1.92 4.56-4.08 5.92l3.6 2.8C37.76 32.96 43.2 29.04 43.2 24z" fill="#4285F4"/>
+            <path d="M11.36 28.64A14.2 14.2 0 0110.4 24c0-1.6.28-3.12.8-4.56L7.04 16A19.14 19.14 0 004.8 24c0 2.88.64 5.6 1.76 8.08l4.8-3.44z" fill="#FBBC05"/>
+            <path d="M24 38.4c4.24 0 7.84-1.44 10.48-3.84l-3.6-2.8c-1.44.96-3.28 1.52-6.88 1.52-5.92 0-10.88-4.08-12.64-9.6l-4.8 3.44C9.84 33.76 16.32 38.4 24 38.4z" fill="#34A853"/>
+          </svg>
+          <span class="text-xs font-medium text-white">Google Cloud</span>
+          <span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-indigo-300 bg-indigo-900 px-2 border border-indigo-700 rounded-full">Selected</span>
+        </label>
+
+        <%# Other platforms — coming soon %>
+        <% [
+          ["AWS", "Soon"],
+          ["Cloudflare", "Soon"],
+          ["Fly.io", "Soon"],
+          ["Render", "Soon"],
+          ["DigitalOcean", "Soon"]
+        ].each do |name, label| %>
+          <div class="relative flex flex-col items-center gap-2 p-4 rounded-xl border border-[var(--anchor-border)] opacity-40 cursor-not-allowed">
+            <div class="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center">
+              <span class="text-xs font-mono text-gray-600"><%= name[0..1] %></span>
+            </div>
+            <span class="text-xs font-medium text-gray-500"><%= name %></span>
+            <span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-gray-500 bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full"><%= label %></span>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# ── GCP Credentials ──────────────────────────────────────────── %>
+    <div class="surface-card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Google Cloud credentials</h2>
+        <% if current_user.google_connected? %>
+          <span class="text-xs text-emerald-400 flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            Connected
+          </span>
+        <% end %>
+      </div>
+
+      <% if current_user.google_connected? %>
+        <%# Already connected — show summary %>
+        <div class="flex items-start gap-3 p-3 rounded-lg bg-emerald-950/20 border border-emerald-800/40">
+          <div class="flex-1 text-sm">
+            <p class="text-emerald-300 font-medium"><%= current_user.connected_google_email %></p>
+            <p class="text-emerald-700 text-xs mt-0.5">GCP Project: <span class="font-mono"><%= current_user.default_gcp_project_id || current_user.gcp_project_from_key || "—" %></span></p>
+          </div>
+          <%= link_to settings_path, class: "text-xs text-gray-500 hover:text-gray-300 underline" do %>
+            Change
+          <% end %>
+        </div>
+      <% else %>
+        <%# Not connected — show instructions and key paste area %>
+        <div class="space-y-4">
+          <div class="p-4 rounded-lg bg-amber-950/20 border border-amber-800/40">
+            <p class="text-sm text-amber-300 font-medium mb-2">GCP credentials required</p>
+            <p class="text-xs text-amber-700 leading-relaxed">
+              To deploy to Google Cloud Run, Anchor needs a service account key.
+              This is a one-time setup — the key is encrypted and stored securely.
+            </p>
+          </div>
+
+          <div class="text-xs text-gray-500 space-y-3 pl-1">
+            <div>
+              <p class="font-medium text-gray-400 mb-1.5">How to create a service account key:</p>
+              <ol class="list-decimal list-inside space-y-1.5">
+                <li>
+                  <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener"
+                     class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Open GCP Service Accounts ↗
+                  </a>
+                  — select your project
+                </li>
+                <li>Click <strong class="text-gray-400">Create Service Account</strong>, give it any name</li>
+                <li>On step 2, grant the role: <code class="text-gray-300 bg-gray-800 px-1 py-0.5 rounded">Editor</code></li>
+                <li>Click Done → click the new service account → <strong class="text-gray-400">Keys</strong> tab</li>
+                <li>Add Key → Create new key → <strong class="text-gray-400">JSON</strong> → download</li>
+                <li>Paste the downloaded file contents below</li>
+              </ol>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-red-950/30 border border-red-900/40">
+              <p class="text-red-400 font-medium mb-0.5">⚠ Common mistake</p>
+              <p class="text-red-600">
+                Don't use a <strong class="text-red-500">Firebase Admin SDK</strong> key
+                (<code class="text-xs">firebase-adminsdk-…</code>) — it won't work.
+                You need a regular service account with the Editor role.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-2">Service account key (JSON)</label>
+            <textarea name="gcp_service_account_key"
+                      rows="6"
+                      placeholder='{"type": "service_account", "project_id": "...", ...}'
+                      class="w-full bg-[var(--anchor-bg-2)] border border-[var(--anchor-border)] text-gray-300 rounded-lg px-3 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-700 resize-none"></textarea>
+          </div>
+        </div>
+      <% end %>
+
+      <%# Region picker (always shown) %>
+      <div class="mt-4 pt-4 border-t border-[var(--anchor-border)]">
+        <label class="block text-xs font-medium text-gray-400 mb-2">Deployment region</label>
+        <select name="gcp_region"
+                class="w-full bg-[var(--anchor-bg-2)] border border-[var(--anchor-border)] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <% Project::REGIONS.each do |region| %>
+            <option value="<%= region %>"
+                    <%= "selected" if region == (@project.gcp_region.presence || current_user.default_gcp_region.presence || "us-central1") %>>
+              <%= region %>
+            </option>
+          <% end %>
+        </select>
+      </div>
+    </div>
+
+    <%# ── Environment Variables ────────────────────────────────────── %>
+    <% all_vars = (@env_vars + @extra_vars).uniq { |v| v["key"] } %>
+    <% if all_vars.any? %>
+      <div class="surface-card p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Environment variables</h2>
+          <% missing_count = @project.missing_required_secrets.size %>
+          <% if missing_count > 0 %>
+            <span class="text-xs text-amber-400"><%= missing_count %> required missing</span>
+          <% else %>
+            <span class="text-xs text-emerald-400">All required set ✓</span>
+          <% end %>
+        </div>
+
+        <div class="space-y-3">
+          <% all_vars.each do |var| %>
+            <% key        = var["key"] %>
+            <% existing   = @project.secrets.find_by(key: key) %>
+            <% required   = var["required"] %>
+
+            <div class="grid grid-cols-5 gap-3 items-start">
+              <div class="col-span-2">
+                <div class="flex items-center gap-1.5 h-9">
+                  <code class="text-xs text-gray-300 font-mono"><%= key %></code>
+                  <% if required %>
+                    <span class="text-[10px] text-amber-500 flex-shrink-0">required</span>
+                  <% end %>
+                </div>
+                <% if var["hint"].present? %>
+                  <p class="text-[11px] text-gray-600 mt-0.5 leading-relaxed"><%= var["hint"] %></p>
+                <% end %>
+              </div>
+              <div class="col-span-3">
+                <% if existing %>
+                  <div class="flex items-center gap-2 h-9">
+                    <span class="text-xs text-gray-500 font-mono"><%= existing.masked_value %></span>
+                    <span class="text-xs text-emerald-500">✓ set</span>
+                  </div>
+                <% else %>
+                  <input type="text"
+                         name="secrets[<%= key %>]"
+                         placeholder="<%= var["hint"].presence || "Enter value…" %>"
+                         class="w-full h-9 bg-[var(--anchor-bg-2)] border border-[var(--anchor-border)] text-white rounded-lg px-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-700">
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+
+        <p class="text-xs text-gray-600 mt-4 pt-3 border-t border-[var(--anchor-border)]">
+          You can add or update environment variables later from the project settings.
+        </p>
+      </div>
+    <% end %>
+
+    <%# ── Deploy button ────────────────────────────────────────────── %>
+    <div class="flex items-center justify-between">
+      <%= link_to wizard_path, class: "text-sm text-gray-500 hover:text-gray-300" do %>
+        ← Start over
+      <% end %>
+
+      <button type="submit"
+              class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm px-6 py-3 rounded-lg transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+        Deploy to Google Cloud
+      </button>
+    </div>
+
+  <% end %>
+</div>

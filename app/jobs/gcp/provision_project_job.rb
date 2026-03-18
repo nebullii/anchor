@@ -12,6 +12,12 @@ module Gcp
       project = Project.find(project_id)
       user    = project.user
 
+      # Skip if user has no GCP credentials configured
+      unless user.google_connected?
+        Rails.logger.warn("[ProvisionProjectJob] User #{user.id} has no GCP credentials. Skipping provisioning.")
+        return
+      end
+
       return if project.gcp_provisioned?
 
       steps = []

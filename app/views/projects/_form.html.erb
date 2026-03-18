@@ -52,11 +52,25 @@
   <%# GCP Project ID %>
   <div>
     <%= f.label :gcp_project_id, "GCP Project ID", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
-    <%= f.text_field :gcp_project_id,
-          value: project.gcp_project_id.presence || current_user.default_gcp_project_id,
-          placeholder: "my-gcp-project-123",
-          class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600" %>
-    <p class="mt-1 text-xs text-gray-600">Found in your Google Cloud Console.</p>
+    <% if current_user.gcp_project_from_key.present? %>
+      <%= f.text_field :gcp_project_id,
+            value: current_user.gcp_project_from_key,
+            readonly: true,
+            class: "w-full bg-gray-900 border border-gray-700 text-gray-400 rounded-lg px-3 py-2 text-sm cursor-not-allowed" %>
+      <p class="mt-1 text-xs text-gray-600">
+        Auto-filled from your <%= link_to "GCP service account key", settings_path, class: "text-indigo-400 hover:underline" %>.
+        To use a different project, update your credentials in Settings.
+      </p>
+    <% else %>
+      <%= f.text_field :gcp_project_id,
+            value: project.gcp_project_id.presence || current_user.default_gcp_project_id,
+            placeholder: "my-gcp-project-123",
+            class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600" %>
+      <p class="mt-1 text-xs text-gray-600">
+        Found in your <%= link_to "Google Cloud Console", "https://console.cloud.google.com", target: "_blank", class: "text-indigo-400 hover:underline" %>.
+        <%= link_to "Add GCP credentials in Settings", settings_path, class: "text-indigo-400 hover:underline" %> first.
+      </p>
+    <% end %>
   </div>
 
   <%# Region %>

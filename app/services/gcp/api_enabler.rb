@@ -22,13 +22,7 @@ module Gcp
     def call
       yield "Enabling required GCP APIs for #{@gcp_project_id}…" if block_given?
 
-      @user.with_gcp_credentials_file do |key_path|
-        env = {
-          "GOOGLE_APPLICATION_CREDENTIALS"         => key_path,
-          "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE" => key_path,
-          "CLOUDSDK_CORE_DISABLE_PROMPTS"          => "1"
-        }
-
+      with_gcp_env do |env|
         apis_joined = REQUIRED_APIS.join(" ")
         cmd = "gcloud services enable #{apis_joined} --project=#{Shellwords.escape(@gcp_project_id)} 2>&1"
 
@@ -48,6 +42,18 @@ module Gcp
       end
 
       REQUIRED_APIS
+    end
+
+    private
+
+    def with_gcp_env
+      if @user.google_oauth_connected?
+        yield Gcp::ShellEnv.with_token(@user.fresh_google_token!)
+      else
+        @user.with_gcp_credentials_file do |key_path|
+          yield Gcp::ShellEnv.with_key(key_path)
+        end
+      end
     end
   end
 end

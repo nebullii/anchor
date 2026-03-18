@@ -63,10 +63,7 @@ module Deployments
 
       if user.google_oauth_connected?
         token = user.fresh_google_token!
-        env = {
-          "CLOUDSDK_AUTH_ACCESS_TOKEN"    => token,
-          "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1"
-        }
+        env = Gcp::ShellEnv.with_token(token)
         IO.popen(env, "#{cmd} 2>&1") do |io|
           io.each_line do |raw|
             line = raw.chomp
@@ -76,11 +73,7 @@ module Deployments
         end
       else
         user.with_gcp_credentials_file do |key_path|
-          env = {
-            "GOOGLE_APPLICATION_CREDENTIALS"         => key_path,
-            "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE" => key_path,
-            "CLOUDSDK_CORE_DISABLE_PROMPTS"          => "1"
-          }
+          env = Gcp::ShellEnv.with_key(key_path)
           IO.popen(env, "#{cmd} 2>&1") do |io|
             io.each_line do |raw|
               line = raw.chomp

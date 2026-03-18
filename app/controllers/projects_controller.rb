@@ -1,4 +1,5 @@
 class ProjectsController < ApplicationController
+  include GcpRequirement
   before_action :set_project, only: %i[show edit update destroy deploy redeploy analyze setup_cicd generate_cicd commit_cicd dockerfile_preview]
 
   def index
@@ -151,17 +152,14 @@ class ProjectsController < ApplicationController
     end
 
     last = @project.last_successful_deployment
-    unless last
-      redirect_to @project, alert: "No successful deployment to redeploy from." and return
-    end
 
     @deployment = @project.deployments.create!(
       status:         "queued",
       triggered_by:   "manual",
-      branch:         last.branch || @project.production_branch,
-      commit_sha:     last.commit_sha,
-      commit_message: last.commit_message,
-      commit_author:  last.commit_author
+      branch:         last&.branch || @project.production_branch,
+      commit_sha:     last&.commit_sha,
+      commit_message: last&.commit_message,
+      commit_author:  last&.commit_author
     )
     current_user.increment_deploy_quota!
     DeploymentJob.perform_later(@deployment.id)

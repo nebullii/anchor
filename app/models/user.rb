@@ -44,6 +44,20 @@ class User < ApplicationRecord
   # Build a User from an OmniAuth hash returned by omniauth-github.
   def self.from_omniauth(auth)
     find_or_initialize_by(github_id: auth.uid.to_s).tap do |user|
+      # If the user already exists, check for a corrupted encryption IV.
+      # AES-256-CBC requires a 16-byte IV; a bad IV causes login to fail.
+      if user.persisted?
+        begin
+          user.github_token # attempt decrypt to validate stored IV
+        rescue OpenSSL::Cipher::CipherError
+          user.update_columns(
+            encrypted_github_token:    Base64.strict_encode64("placeholder"),
+            encrypted_github_token_iv: Base64.strict_encode64(OpenSSL::Random.random_bytes(16))
+          )
+          user.reload
+        end
+      end
+
       user.github_login = auth.info.nickname
       user.github_token = auth.credentials.token
       user.name         = auth.info.name

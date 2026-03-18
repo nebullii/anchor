@@ -68,10 +68,31 @@ class RepositoryAnalysisJob < ApplicationJob
     output = `git clone --depth=1 --branch #{Shellwords.escape(branch)} \
               #{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)} 2>&1`
 
+    # If the branch wasn't found, clone without specifying one (use repo default)
+    if !$?.success? && output.include?("Remote branch") && output.include?("not found")
+      FileUtils.rm_rf(repo_path)
+      actual_branch = detect_default_branch(clone_url)
+      output = `git clone --depth=1 #{actual_branch ? "--branch #{Shellwords.escape(actual_branch)}" : ""} \
+                #{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)} 2>&1`
+
+      if $?.success? && actual_branch
+        project.update_columns(production_branch: actual_branch)
+        repository.update_columns(default_branch: actual_branch)
+      end
+    end
+
     unless $?.success?
       safe_output = output.gsub(clone_url, "[REDACTED]")
       raise "git clone failed: #{safe_output.lines.last(3).join}"
     end
+  end
+
+  def detect_default_branch(clone_url)
+    out = `git ls-remote --symref #{Shellwords.escape(clone_url)} HEAD 2>&1`
+    match = out.match(%r{ref: refs/heads/(\S+)\s+HEAD})
+    match&.captures&.first
+  rescue
+    nil
   end
 
   def broadcast_complete(project)

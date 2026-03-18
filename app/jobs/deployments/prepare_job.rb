@@ -24,6 +24,10 @@ module Deployments
 
           guard_repo_size!(deployment, repository)
 
+          # Ensure GCP infrastructure is ready before trying to build.
+          # This handles first deploys and projects where provisioning previously failed.
+          ensure_gcp_provisioned!(deployment, project)
+
           deployment.append_log("Cloning #{repository.full_name} @ #{branch(project)}...")
 
           repo_path = clone_repository(deployment, project, repository)
@@ -42,32 +46,106 @@ module Deployments
 
     private
 
+    # Provisions GCP APIs + Artifact Registry if not already done.
+    # Runs synchronously so the build step can immediately use the registry.
+    def ensure_gcp_provisioned!(deployment, project)
+      return if project.gcp_provisioned?
+
+      deployment.append_log("Setting up Google Cloud infrastructure (first deploy)…")
+
+      user = project.user
+      unless user.google_connected?
+        raise Deployments::DeploymentError,
+              "GCP credentials not configured. Add a service account key in Settings."
+      end
+
+      begin
+        Gcp::ApiEnabler.new(user, project.gcp_project_id).call do |line|
+          deployment.append_log(line, source: "gcp")
+        end
+
+        Gcp::ArtifactRegistryProvisioner.new(
+          user,
+          project.gcp_project_id,
+          project.gcp_region
+        ).call do |line|
+          deployment.append_log(line, source: "gcp")
+        end
+
+        project.update!(
+          gcp_provisioned:     true,
+          gcp_provisioned_at:  Time.current,
+          gcp_provision_error: nil
+        )
+        deployment.append_log("Google Cloud infrastructure ready.")
+      rescue Gcp::ProvisioningError => e
+        project.update_columns(gcp_provision_error: e.message)
+        raise Deployments::DeploymentError,
+              "GCP setup failed: #{e.message}\n\n" \
+              "Make sure your service account has the Editor role (not Firebase Admin SDK)."
+      end
+    end
+
     def clone_repository(deployment, project, repository)
-      repo_path = tmp_path(deployment)
+      repo_path  = tmp_path(deployment)
+      clone_url  = repository.authenticated_clone_url
+      target_branch = branch(project)
+
       FileUtils.rm_rf(repo_path)
       FileUtils.mkdir_p(File.dirname(repo_path))
 
-      clone_url = repository.authenticated_clone_url
-      run_git!(
-        "clone --depth=1 --branch #{Shellwords.escape(branch(project))} " \
-        "#{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)}",
-        deployment: deployment,
-        redact: clone_url   # never log the token-bearing URL
-      )
+      begin
+        run_git!(
+          "clone --depth=1 --branch #{Shellwords.escape(target_branch)} " \
+          "#{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)}",
+          deployment: deployment,
+          redact: clone_url
+        )
+      rescue Deployments::DeploymentError => e
+        # Branch doesn't exist — detect actual default and retry
+        if e.message.include?("not found")
+          FileUtils.rm_rf(repo_path)
+          actual = detect_default_branch(clone_url)
+          if actual && actual != target_branch
+            deployment.append_log("Branch '#{target_branch}' not found — using '#{actual}' instead.")
+            project.update_columns(production_branch: actual)
+            repository.update_columns(default_branch: actual)
+            target_branch = actual
+            run_git!(
+              "clone --depth=1 --branch #{Shellwords.escape(actual)} " \
+              "#{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)}",
+              deployment: deployment,
+              redact: clone_url
+            )
+          else
+            raise
+          end
+        else
+          raise
+        end
+      end
 
-      sha     = capture_git!("rev-parse HEAD",       repo_path)
-      message = capture_git!("log -1 --pretty=%s",   repo_path)
-      author  = capture_git!("log -1 --pretty=%an",  repo_path)
+      sha     = capture_git!("rev-parse HEAD",      repo_path)
+      message = capture_git!("log -1 --pretty=%s",  repo_path)
+      author  = capture_git!("log -1 --pretty=%an", repo_path)
 
       deployment.update!(
         commit_sha:     sha.strip,
         commit_message: message.strip,
         commit_author:  author.strip,
-        branch:         branch(project)
+        branch:         target_branch
       )
       deployment.append_log("Cloned at #{sha.strip.first(8)}: #{message.strip}")
 
       repo_path
+    end
+
+    def detect_default_branch(clone_url)
+      out   = `git ls-remote --symref #{Shellwords.escape(clone_url)} HEAD 2>&1`
+      match = out.match(%r{ref: refs/heads/(\S+)\s+HEAD})
+      match&.captures&.first
+    rescue
+      nil
     end
 
     def detect_framework(deployment, repo_path, project)

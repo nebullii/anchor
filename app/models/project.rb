@@ -28,7 +28,7 @@ class Project < ApplicationRecord
   validates :slug,           presence: true, uniqueness: true,
                              format: { with: /\A[a-z0-9\-]+\z/,
                                        message: "only lowercase letters, numbers, and hyphens" }
-  validates :gcp_project_id, presence: true
+  validates :gcp_project_id, presence: true, gcp_project_id: true, unless: :draft?
   validates :gcp_region,     presence: true, inclusion: { in: REGIONS }
   validates :status,          inclusion: { in: STATUSES }
   validates :analysis_status, inclusion: { in: ANALYSIS_STATUSES }
@@ -39,9 +39,10 @@ class Project < ApplicationRecord
   # Callbacks                                                            #
   # ------------------------------------------------------------------ #
   before_validation :set_slug,           on: :create
+  before_validation :set_gcp_project_id, on: :create
   before_validation :set_service_name,   on: :create
   before_validation :set_webhook_secret, on: :create
-  after_create      :enqueue_provisioning
+  after_create      :enqueue_provisioning, unless: :draft?
 
   # ------------------------------------------------------------------ #
   # Scopes                                                               #
@@ -120,6 +121,11 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def set_gcp_project_id
+    return if draft?
+    self.gcp_project_id ||= user.gcp_project_from_key
+  end
 
   def set_slug
     return if slug.present?

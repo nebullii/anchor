@@ -79,6 +79,38 @@
   </div>
 <% end %>
 
+<%# ── GCP provisioning error ────────────────────────────────────── %>
+<% if @project.gcp_provision_error.present? && !@project.gcp_provisioned? %>
+  <div class="mb-6 rounded-xl bg-red-950/40 border border-red-800/50 p-4">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start gap-3 min-w-0">
+        <svg class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-red-300 mb-1">GCP setup failed — deployments will not work</p>
+          <p class="text-xs text-red-500 font-mono break-words"><%= @project.gcp_provision_error.lines.first&.strip %></p>
+          <% if @project.gcp_provision_error.include?("firebase-adminsdk") || @project.gcp_provision_error.include?("AUTH_PERMISSION_DENIED") %>
+            <p class="text-xs text-red-400 mt-2">
+              Your service account doesn't have the required permissions.
+              <% if @project.gcp_provision_error.include?("firebase-adminsdk") %>
+                Firebase Admin SDK accounts cannot deploy to Cloud Run.
+              <% end %>
+              You need a service account with the <strong>Editor</strong> role (or Cloud Build + Cloud Run + Artifact Registry roles).
+            </p>
+            <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener"
+               class="inline-block text-xs text-red-300 underline underline-offset-2 mt-1">
+              Open GCP Service Accounts →
+            </a>
+          <% end %>
+        </div>
+      </div>
+      <%= link_to "Update credentials", settings_path,
+            class: "flex-shrink-0 text-xs font-medium text-red-900 bg-red-400 hover:bg-red-300 px-3 py-1.5 rounded transition-colors" %>
+    </div>
+  </div>
+<% end %>
+
 <%# ── Live URL ─────────────────────────────────────────────────── %>
 <% if @project.latest_url.present? %>
   <div class="mb-6 flex items-center gap-3 p-4 rounded-xl bg-emerald-950/50 border border-emerald-800/50"

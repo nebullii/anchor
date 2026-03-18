@@ -49,7 +49,7 @@ module Deployments
       cmd = [
         "gcloud builds describe #{Shellwords.escape(build_id)}",
         "--project=#{Shellwords.escape(deployment.project.gcp_project_id)}",
-        "--format=value(status)"
+        "--format='value(status)'"
       ].join(" ")
 
       output = run_gcloud!(cmd, deployment: deployment, source: "cloud_build")
@@ -75,7 +75,7 @@ module Deployments
       cmd = [
         "gcloud builds describe #{Shellwords.escape(build_id)}",
         "--project=#{Shellwords.escape(deployment.project.gcp_project_id)}",
-        "--format=value(failureInfo.detail)"
+        "--format='value(failureInfo.detail)'"
       ].join(" ")
       run_gcloud!(cmd, deployment: deployment, source: "cloud_build").strip
     rescue

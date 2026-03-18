@@ -20,6 +20,13 @@ Rails.application.routes.draw do
   # GitHub webhook receiver
   post "/webhooks/github", to: "webhooks#github"
 
+  # Deploy wizard — one-click deployment flow
+  get  "/wizard",                          to: "deploy_wizard#index",     as: "wizard"
+  post "/wizard",                          to: "deploy_wizard#create",    as: "wizard_create"
+  get  "/wizard/:project_id/analyzing",    to: "deploy_wizard#analyzing", as: "wizard_analyzing"
+  get  "/wizard/:project_id/configure",    to: "deploy_wizard#configure", as: "wizard_configure"
+  post "/wizard/:project_id/launch",       to: "deploy_wizard#launch",    as: "wizard_launch"
+
   resources :projects do
     member do
       post :deploy
