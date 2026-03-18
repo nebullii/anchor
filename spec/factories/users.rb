@@ -7,5 +7,7 @@ FactoryBot.define do
     avatar_url { Faker::Internet.url }
     github_token { Faker::Alphanumeric.alphanumeric(number: 40) }
     default_gcp_region { "us-central1" }
+    google_access_token { Faker::Alphanumeric.alphanumeric(number: 40) }
+    google_token_expires_at { 1.hour.from_now }
   end
 end
