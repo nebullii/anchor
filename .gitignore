@@ -40,5 +40,6 @@
 # Local dev notes — not for version control
 /docs/
 !/docs/deployment.md
+!/docs/screenshots/
 /CLAUDE.md
 key.json
