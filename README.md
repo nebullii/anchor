@@ -1,120 +1,176 @@
-# Anchor
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="720" alt="Anchor Dashboard" />
+</p>
 
-> Deploy any GitHub repository to the cloud — no Kubernetes, no YAML, no ops team.
+<h1 align="center">Anchor</h1>
 
-Anchor connects to your GitHub account, detects your framework, generates a production Dockerfile, builds and deploys your app, and streams logs live to your browser. When something fails, Claude explains what went wrong in plain English.
+<p align="center">
+  <strong>Autonomous deployment platform that takes any GitHub repo from code to a live URL in one click.</strong>
+</p>
 
-**Your infrastructure. Your cloud bill. Anchor is just the control plane.**
+<p align="center">
+  <a href="https://github.com/nebullii/anchor/actions/workflows/ci.yml"><img src="https://github.com/nebullii/anchor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Ruby-3.4.4-CC342D?logo=ruby&logoColor=white" alt="Ruby 3.4.4">
+  <img src="https://img.shields.io/badge/Rails-8.1-D30001?logo=rubyonrails&logoColor=white" alt="Rails 8.1">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License"></a>
+</p>
 
-### Cloud providers
+<p align="center">
+  <a href="https://anchor-prod-cuk7hgt2pq-uc.a.run.app"><strong>Live Demo</strong></a>
+</p>
+
+---
+
+Anchor connects to your GitHub account, detects your framework, generates a production Dockerfile, builds a container image, deploys it to the cloud, and streams every log line to your browser in real time. When something breaks, an AI agent explains the failure in plain English.
+
+No Kubernetes. No YAML. No ops team. Your infrastructure, your cloud bill — Anchor is just the control plane.
+
+## Key Features
+
+- **Framework auto-detection** — Rails, Django, FastAPI, Next.js, Go, Elixir, and more
+- **Dockerfile generation** — production-ready, multi-stage builds generated per framework
+- **Encrypted secrets management** — AES-256-CBC at rest, injected at deploy time
+- **Live log streaming** — Turbo Streams over ActionCable, real-time in-browser terminal
+- **AI error diagnosis** — Claude analyzes failures and explains fixes in plain English
+- **GitHub webhook deploys** — auto-deploy on push with HMAC-SHA256 verification
+- **Deploy quotas & rate limiting** — Rack::Attack + per-user quota enforcement
+
+## Cloud Providers
 
 | Provider | Status |
 |---|---|
-| Google Cloud Run | ✅ Live |
-| AWS | Coming soon |
-| Azure | Coming soon |
-| DigitalOcean | Coming soon |
-| Fly.io | Coming soon |
-| Hetzner | Coming soon |
-| Oracle Cloud | Coming soon |
-| Cloudflare | Coming soon |
-| Linode | Coming soon |
-| Vultr | Coming soon |
+| Google Cloud Run | **Live** |
+| AWS (ECS / App Runner) | Planned |
+| Azure Container Apps | Planned |
+| Fly.io | Planned |
 
-Anchor will automatically pick the best free tier across every major cloud — so you get the most out of your infrastructure without paying more than you need to.
+The architecture is provider-agnostic — a `ProviderAdapter` interface allows adding new clouds without touching the deployment pipeline.
 
----
-
-## Screenshots
-
-![Dashboard](docs/screenshots/dashboard.png)
-
-![Repositories](docs/screenshots/repositories.png)
-
----
-
-## How it works
+## How It Works
 
 ```
-GitHub repo  →  Framework detection  →  Dockerfile generation
-     ↓
-Cloud build  →  Container image  →  Container registry
-     ↓
-Cloud compute  →  Live URL  →  Health check
-     ↓
-(on failure)  →  Claude explains what went wrong
+GitHub repo → Clone → Framework detection → Dockerfile generation
+                                                    ↓
+                                   Cloud Build → Container image → Artifact Registry
+                                                                         ↓
+                                                    Cloud Run deploy → Health check → Live URL
+                                                                         ↓
+                                                           (on failure) AI error explanation
 ```
 
-1. Sign in with GitHub
-2. Pick a repository — Anchor syncs your repos via the GitHub API
-3. Connect your cloud account (currently Google Cloud — OAuth or service account key)
-4. Add secrets — encrypted at rest, injected at deploy time
-5. Click **Deploy** — watch logs stream live in your browser
-6. Get a public URL
+1. **Sign in** with GitHub OAuth
+2. **Select a repo** — Anchor syncs your repositories via the GitHub API
+3. **Connect your cloud** — Google OAuth or service account key
+4. **Add secrets** — encrypted, scoped per project
+5. **Deploy** — one click, watch logs stream live
+6. **Get a URL** — publicly accessible, SSL-terminated
 
-Auto-deploy on push is available via GitHub webhook. CI/CD workflow files can be generated and committed directly from the UI.
+## Architecture
 
----
+### Deployment Pipeline
 
-## Tech stack
+Five Sidekiq jobs execute in sequence. Each hands off to the next on success. Any failure triggers the AI error explainer.
+
+```
+DeploymentJob
+  └─ PrepareJob              # clone, detect framework, generate Dockerfile
+       └─ BuildImageJob      # gcloud builds submit --async
+            └─ PollBuildStatusJob      # exponential backoff polling
+                 └─ DeployToCloudRunJob  # deploy + health check
+                      └─ ExplainErrorJob   # AI diagnosis (on failure)
+```
+
+### Status Machine
+
+```
+queued → analyzing → building → deploying → health_check → running
+                                                         → failed → AI explanation
+                                                         → cancelled
+```
+
+### Real-Time Streaming
+
+Every deployment broadcasts two Turbo Stream channels:
+
+| Channel | Purpose |
+|---|---|
+| `deployment_<id>` | Status transitions, pipeline progress, outcome panel |
+| `deployment_<id>_logs` | Individual log lines appended to an in-browser terminal |
+
+### Data Model
+
+| Model | Responsibility |
+|---|---|
+| `User` | Encrypted OAuth tokens, GCP credentials, deployment quotas |
+| `Repository` | GitHub repos synced via Octokit |
+| `Project` | Service config, framework detection, analysis results |
+| `Deployment` | Full lifecycle — status, logs, plan, error category, AI explanation |
+| `DeploymentLog` | Append-only log stream, broadcast via Turbo |
+| `DeploymentEvent` | Immutable audit trail of every status transition |
+| `Secret` | AES-256-CBC encrypted env vars, scoped per project |
+
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Ruby on Rails 8.1.2 |
-| Ruby | 3.4.4 |
-| Database | PostgreSQL 15+ |
-| Background jobs | Sidekiq 8 + Redis 7 |
+| Framework | Ruby on Rails 8.1 |
+| Language | Ruby 3.4.4 |
+| Database | PostgreSQL 16 |
+| Background Jobs | Sidekiq 8 + Redis 7 |
 | Frontend | Hotwire (Turbo Streams + Stimulus) + Tailwind CSS v4 |
-| Real-time | ActionCable over Redis |
-| Auth | OmniAuth — GitHub OAuth2 + Google OAuth2 |
-| GitHub API | Octokit 10 |
+| Real-Time | ActionCable over Redis |
+| Auth | OmniAuth (GitHub OAuth2 + Google OAuth2) |
 | Encryption | attr_encrypted (AES-256-CBC) |
-| AI | Anthropic Claude — error explanation + repo analysis |
-| Rate limiting | Rack::Attack |
-| Web server | Puma + Thrust |
+| AI | Anthropic Claude (error explanation + repo analysis) |
+| Rate Limiting | Rack::Attack |
+| Infrastructure | Docker, Google Cloud Build, Artifact Registry, Cloud Run |
+| CI/CD | GitHub Actions (test + security scan + build + migrate + deploy) |
 
----
+## Supported Frameworks
 
-## Prerequisites
+Rails | Node.js | Next.js | Bun | Python | FastAPI | Flask | Django | Go | Elixir | Static HTML | Docker
+
+## Security
+
+- All OAuth tokens and secrets encrypted at rest (AES-256-CBC)
+- Encryption key validated at boot — app refuses to start without it
+- Google OAuth tokens refreshed automatically with advisory locking
+- GitHub webhooks verified with HMAC-SHA256
+- Temporary GCP credential files written to `Tempfile`, deleted immediately after use
+- CSRF protection on all non-webhook endpoints
+- Rate limiting: 300 req/5 min per IP, 20 deploys/hour per user
+- Clone tokens redacted from all logs
+- Env vars passed via `--env-vars-file` (YAML) to prevent injection
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="720" alt="Dashboard — deployment overview with live status" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/repositories.png" width="720" alt="Repository selection — synced from GitHub" />
+</p>
+
+## Getting Started
+
+### Prerequisites
 
 - Ruby 3.4.4 (`rbenv` or `mise`)
-- PostgreSQL 15+
+- PostgreSQL 16+
 - Redis 7+
 - [`gcloud` CLI](https://cloud.google.com/sdk/docs/install)
-- A [GitHub OAuth App](https://github.com/settings/applications/new)
+- [GitHub OAuth App](https://github.com/settings/applications/new)
 - A Google Cloud project with billing enabled
 
----
-
-## Local development
-
-### 1. Clone and install
+### Setup
 
 ```bash
-git clone https://github.com/nebullii/anchor.git
-cd anchor
+git clone https://github.com/nebullii/anchor.git && cd anchor
 bundle install
 ```
 
-### 2. Create a GitHub OAuth App
-
-Go to **GitHub → Settings → Developer settings → OAuth Apps → New OAuth App**:
-
-| Field | Value |
-|---|---|
-| Homepage URL | `http://localhost:3000` |
-| Authorization callback URL | `http://localhost:3000/auth/github/callback` |
-
-### 3. Create a Google OAuth App *(required for GCP integration)*
-
-Go to [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials) → Create OAuth client ID:
-
-| Field | Value |
-|---|---|
-| Application type | Web application |
-| Authorized redirect URI | `http://localhost:3000/auth/google_oauth2/callback` |
-
-### 4. Configure credentials
+Configure credentials:
 
 ```bash
 EDITOR="nano" bundle exec rails credentials:edit
@@ -133,120 +189,47 @@ encryption:
   key: "your-32-byte-hex-key"   # ruby -e "require 'securerandom'; puts SecureRandom.hex(16)"
 
 anthropic:
-  api_key: "sk-ant-..."          # optional — AI features degrade gracefully without it
+  api_key: "sk-ant-..."          # optional — AI features degrade gracefully
 ```
-
-### 5. Database setup
 
 ```bash
 bundle exec rails db:create db:migrate
+bin/dev    # http://localhost:3000
 ```
 
-### 6. Start the server
-
-```bash
-bin/dev
-```
-
-Opens at [http://localhost:3000](http://localhost:3000). Runs Rails (port 3000) and Sidekiq via Foreman.
-
----
-
-## Environment variables
+### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `RAILS_MASTER_KEY` | ✅ | Contents of `config/master.key` |
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `REDIS_URL` | ✅ | Redis connection string |
-| `GITHUB_CLIENT_ID` | ✅ | GitHub OAuth app client ID |
-| `GITHUB_CLIENT_SECRET` | ✅ | GitHub OAuth app client secret |
-| `GOOGLE_CLIENT_ID` | — | Google OAuth app client ID |
-| `GOOGLE_CLIENT_SECRET` | — | Google OAuth app client secret |
-| `ENCRYPTION_KEY` | — | 32-byte AES-256 key for at-rest encryption |
-| `ANTHROPIC_API_KEY` | — | Enables AI error explanation and repo analysis |
-| `GITHUB_WEBHOOK_SECRET` | — | HMAC secret for verifying GitHub webhook payloads |
+| `RAILS_MASTER_KEY` | Yes | Contents of `config/master.key` |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `REDIS_URL` | Yes | Redis connection string (Sidekiq + ActionCable + Rack::Attack) |
+| `ENCRYPTION_KEY` | Yes | 32-byte AES-256 key — app will not boot without it |
+| `GITHUB_CLIENT_ID` | Yes | GitHub OAuth app client ID |
+| `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth app secret |
+| `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID (for GCP integration) |
+| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret |
+| `ANTHROPIC_API_KEY` | No | Enables AI error explanation + repo analysis |
+| `GITHUB_WEBHOOK_SECRET` | No | HMAC secret for webhook verification |
 
----
-
-## Architecture
-
-### Models
-
-| Model | Responsibility |
-|---|---|
-| `User` | Auth tokens (encrypted), GCP credentials, deployment quotas |
-| `Repository` | GitHub repos synced via Octokit |
-| `Project` | Cloud Run service definition, framework state, analysis results |
-| `Deployment` | Full lifecycle record — status, logs, error category, AI explanation |
-| `DeploymentLog` | Append-only log lines streamed live via Turbo |
-| `DeploymentEvent` | Audit trail of every status transition |
-| `Secret` | Encrypted env vars per project, injected into Cloud Run at deploy time |
-
-### Deployment pipeline
-
-Five jobs execute in sequence. Each hands off to the next only on success. Any failure marks the deployment `failed` and triggers the AI error explainer.
-
-```
-DeploymentJob
-  └─ PrepareJob          # clone repo, detect framework, generate Dockerfile
-       └─ BuildImageJob  # gcloud builds submit --async
-            └─ PollBuildStatusJob      # polls Cloud Build with exponential backoff
-                 └─ DeployToCloudRunJob  # gcloud run deploy + health check
-                      └─ ExplainErrorJob  # (on failure only) Anthropic Claude
-```
-
-### Status machine
-
-```
-queued → analyzing → building → deploying → health_check
-       → success | failed | cancelled
-```
-
-### Real-time streaming
-
-Every deployment streams two Turbo Stream channels to the browser:
-
-| Channel | Carries |
-|---|---|
-| `deployment_<id>` | Status badge, pipeline steps, outcome panel |
-| `deployment_<id>_logs` | Individual log lines appended to the terminal UI |
-
----
-
-## Supported frameworks
-
-Rails · Node.js · Next.js · Bun · Python · FastAPI · Flask · Django · Elixir · Static · Docker
-
----
-
-## Running tests
+## Running Tests
 
 ```bash
-bundle exec rspec          # full suite
+bundle exec rspec                # full suite
 bundle exec rspec spec/models
 bundle exec rspec spec/jobs
 bundle exec rspec spec/services
 ```
 
-The test suite uses WebMock — no real GitHub or GCP calls are made.
-
----
-
-## Security
-
-- All OAuth tokens and secrets are encrypted at rest with AES-256-CBC
-- Google OAuth tokens are refreshed automatically before expiry
-- GitHub webhook payloads are verified with HMAC-SHA256
-- Temporary GCP credential files are written to `Tempfile` and deleted immediately after use
-- CSRF protection is enabled on all non-webhook endpoints
-- Rate limiting via Rack::Attack: 300 req/5 min per IP, 20 deploys/hour per user
-
----
+Tests use WebMock — no real GitHub or GCP calls are made.
 
 ## Contributing
 
 1. Fork and create a branch: `git checkout -b feature/my-feature`
-2. Make your changes with tests
+2. Make changes with tests
 3. Ensure the suite passes: `bundle exec rspec`
 4. Open a pull request against `main`
+
+## License
+
+[MIT](LICENSE)
