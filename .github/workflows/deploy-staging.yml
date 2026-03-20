@@ -196,6 +196,8 @@ jobs:
             --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_STAGING }}" \
             --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}" \
             --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}" \
+            --set-env-vars="GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
 
       - name: Print deployment summary

@@ -1,7 +1,8 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
-if echo "$@" | grep -q "rails.*server"; then
+# Prepare the database if running the web server (rails server or puma).
+# The CMD in Dockerfile uses `bundle exec puma`, so we match both.
+if echo "$@" | grep -qE "rails.*server|puma"; then
   ./bin/rails db:prepare
 fi
 
