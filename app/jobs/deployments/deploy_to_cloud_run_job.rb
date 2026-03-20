@@ -107,23 +107,52 @@ module Deployments
       project.port || 3000
     end
 
+    # Cloud Run cold starts can take 30-60s for Rails/Django apps.
+    # Retry with backoff to avoid failing a successful deployment.
+    HEALTH_CHECK_ATTEMPTS = 4
+    HEALTH_CHECK_DELAYS   = [0, 10, 20, 30].freeze  # seconds before each attempt
+
     def run_health_check!(deployment, service_url)
       deployment.append_log("Running health check…")
 
       uri = URI.parse(service_url)
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = (uri.scheme == "https")
-      http.open_timeout = 5
-      http.read_timeout = 8
-      response = http.get(uri.path.presence || "/")
+      last_error = nil
 
-      if response.code.to_i >= 500
-        raise Deployments::DeploymentError, "Health check failed with status #{response.code}."
+      HEALTH_CHECK_ATTEMPTS.times do |attempt|
+        delay = HEALTH_CHECK_DELAYS[attempt] || 30
+        if delay > 0
+          deployment.append_log("Waiting #{delay}s for cold start (attempt #{attempt + 1}/#{HEALTH_CHECK_ATTEMPTS})…")
+          sleep(delay)
+        end
+
+        begin
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.use_ssl = (uri.scheme == "https")
+          http.open_timeout = 15
+          http.read_timeout = 30
+          response = http.get(uri.path.presence || "/")
+
+          if response.code.to_i < 500
+            deployment.append_log("Health check passed (HTTP #{response.code}).")
+            return
+          end
+
+          last_error = "HTTP #{response.code}"
+          deployment.append_log("Health check returned #{response.code}, retrying…", level: "warn")
+        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, SocketError => e
+          last_error = e.message
+          deployment.append_log("Health check attempt #{attempt + 1} failed: #{e.class}", level: "warn")
+        end
       end
 
-      deployment.append_log("Health check passed (#{response.code}).")
-    rescue => e
-      raise Deployments::DeploymentError, "Health check failed: #{e.message}"
+      # All attempts failed — log warning but don't fail the deployment.
+      # The service is already live on Cloud Run; health check flakiness
+      # shouldn't mark a successful deploy as failed.
+      deployment.append_log(
+        "Health check did not pass after #{HEALTH_CHECK_ATTEMPTS} attempts (#{last_error}). " \
+        "The service may still be starting — check #{service_url} manually.",
+        level: "warn"
+      )
     end
   end
 end

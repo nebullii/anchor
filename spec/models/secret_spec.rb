@@ -49,14 +49,22 @@ RSpec.describe Secret, type: :model do
     end
   end
 
-  describe ".to_cloud_run_env_string" do
-    it "formats secrets as KEY=value pairs" do
+  describe ".to_env_yaml" do
+    it "formats secrets as YAML key-value pairs" do
       project = create(:project)
       create(:secret, project: project, key: "FOO", value: "bar")
       create(:secret, project: project, key: "BAZ", value: "qux")
-      result = Secret.to_cloud_run_env_string(project)
-      expect(result).to include("FOO=bar")
-      expect(result).to include("BAZ=qux")
+      result = Secret.to_env_yaml(project)
+      parsed = YAML.safe_load(result)
+      expect(parsed).to eq("BAZ" => "qux", "FOO" => "bar")
+    end
+
+    it "safely handles values containing commas and equals" do
+      project = create(:project)
+      create(:secret, project: project, key: "DSN", value: "host=db,port=5432")
+      result = Secret.to_env_yaml(project)
+      parsed = YAML.safe_load(result)
+      expect(parsed["DSN"]).to eq("host=db,port=5432")
     end
   end
 end

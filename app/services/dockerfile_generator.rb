@@ -14,6 +14,7 @@ class DockerfileGenerator
   end
 
   # Writes a Dockerfile to `repo_path`. No-ops if one already exists.
+  # Also generates a .dockerignore if missing (reduces build context size).
   # Returns the path to the Dockerfile.
   def call
     dockerfile_path = File.join(@repo_path, "Dockerfile")
@@ -23,6 +24,7 @@ class DockerfileGenerator
     raise "No Dockerfile template for framework: #{@detection.framework}" if content.nil?
 
     File.write(dockerfile_path, content)
+    generate_dockerignore
     dockerfile_path
   end
 
@@ -454,5 +456,52 @@ class DockerfileGenerator
         CMD ["_build/prod/rel/#{app_name}/bin/#{app_name}", "start"]
       DOCKERFILE
     end
+  end
+
+  # ------------------------------------------------------------------ #
+  # .dockerignore                                                       #
+  # ------------------------------------------------------------------ #
+
+  def generate_dockerignore
+    return unless @repo_path
+    ignore_path = File.join(@repo_path, ".dockerignore")
+    return if File.exist?(ignore_path)
+
+    File.write(ignore_path, dockerignore_content)
+  end
+
+  def dockerignore_content
+    <<~IGNORE
+      .git
+      .gitignore
+      .github
+      .dockerignore
+      Dockerfile
+      docker-compose*.yml
+      README*
+      LICENSE*
+      CHANGELOG*
+      .env
+      .env.*
+      node_modules
+      .next
+      __pycache__
+      *.pyc
+      .pytest_cache
+      .mypy_cache
+      vendor/bundle
+      .bundle
+      tmp
+      log
+      spec
+      test
+      tests
+      coverage
+      .rspec
+      .rubocop*
+      .eslintrc*
+      .prettierrc*
+      *.md
+    IGNORE
   end
 end

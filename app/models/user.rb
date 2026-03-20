@@ -101,17 +101,26 @@ class User < ApplicationRecord
 
   # Returns a fresh OAuth access token, refreshing it first if expired.
   # Raises if no OAuth tokens are stored.
+  # Uses advisory locking to prevent concurrent refresh race conditions
+  # when multiple Sidekiq jobs run for the same user simultaneously.
   def fresh_google_token!
     raise "Google account not connected via OAuth" unless google_refresh_token.present?
 
     if google_token_expires_at.nil? || google_token_expires_at <= 5.minutes.from_now
-      refresh_google_token!
+      with_lock do
+        # Re-check after acquiring lock — another thread may have already refreshed.
+        reload
+        if google_token_expires_at.nil? || google_token_expires_at <= 5.minutes.from_now
+          refresh_google_token!
+        end
+      end
     end
 
     google_access_token
   end
 
   # Exchanges the stored refresh token for a new access token.
+  # Callers should hold a lock when calling this to avoid race conditions.
   def refresh_google_token!
     require "signet/oauth_2/client"
 

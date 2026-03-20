@@ -50,7 +50,7 @@ module Deployments
         "--tag=#{Shellwords.escape(image_url)}",
         "--timeout=30m",
         "--async",           # return immediately with a build ID; poll separately
-        "--format='value(id)'",
+        "--format=value(id)",
         Shellwords.escape(repo_path)
       ].join(" ")
 
