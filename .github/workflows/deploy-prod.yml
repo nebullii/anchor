@@ -213,8 +213,8 @@ jobs:
             --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
 
       # Deploy the Sidekiq worker as a separate Cloud Run service.
-      # --cpu-always-allocated + --no-cpu-throttling: Sidekiq needs continuous CPU
-      # to poll Redis queues. min-instances=1 prevents cold-start queue delays.
+      # --no-cpu-throttling: Sidekiq needs continuous CPU to poll Redis queues.
+      # min-instances=0: scales to zero when idle (raise to 1 to avoid cold starts).
       - name: Deploy Sidekiq worker to Cloud Run
         run: |
           gcloud run deploy ${{ env.WORKER }} \
@@ -239,6 +239,8 @@ jobs:
             --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL_PROD }}" \
             --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }}" \
             --set-env-vars="GITHUB_CLIENT_SECRET=${{ secrets.GH_CLIENT_SECRET }}" \
+            --set-env-vars="GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
 
       - name: Print deployment summary

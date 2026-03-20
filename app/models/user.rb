@@ -4,7 +4,8 @@ class User < ApplicationRecord
   # ------------------------------------------------------------------ #
   ENCRYPTION_KEY = proc {
     raw = ENV["ENCRYPTION_KEY"] || Rails.application.credentials.dig(:encryption, :key)
-    Digest::SHA256.digest(raw.to_s)[0, 32]
+    raise "ENCRYPTION_KEY is not set — add it as an env var or in credentials.yml" if raw.blank?
+    Digest::SHA256.digest(raw)[0, 32]
   }
 
   attr_encrypted :github_token,          key: ENCRYPTION_KEY, algorithm: "aes-256-cbc"

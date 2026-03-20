@@ -129,20 +129,20 @@ class DeployWizardController < ApplicationController
                  current_user.default_gcp_region.presence ||
                  "us-central1"
 
-    # 5. Finalize project (exit draft mode)
+    # 5. Check deploy quota before provisioning
+    unless current_user.within_deploy_quota?
+      redirect_to wizard_configure_path(@project),
+                  alert: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow." and return
+    end
+
+    # 6. Finalize project (exit draft mode)
     unless @project.update(draft: false, gcp_project_id: gcp_project_id, gcp_region: gcp_region)
       redirect_to wizard_configure_path(@project),
                   alert: "Project configuration error: #{@project.errors.full_messages.to_sentence}" and return
     end
 
-    # 6. Provision GCP infrastructure
+    # 7. Provision GCP infrastructure
     Gcp::ProvisionProjectJob.perform_later(@project.id)
-
-    # 7. Check deploy quota
-    unless current_user.within_deploy_quota?
-      redirect_to project_path(@project),
-                  alert: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow." and return
-    end
 
     # 8. Create and queue deployment
     deployment = @project.deployments.create!(
