@@ -39,7 +39,7 @@ module Anchor
     # Don't generate system test files.
     config.generators.system_tests = nil
 
-    # Rate limiting middleware
-    config.middleware.use Rack::Attack
+    # Rack::Attack is auto-inserted by the rack-attack gem's Railtie.
+    # Do NOT add it manually — that causes double-counting.
   end
 end

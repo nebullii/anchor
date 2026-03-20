@@ -15,9 +15,9 @@ class Rack::Attack
     req.ip unless req.path.start_with?("/assets")
   end
 
-  # Auth: 10 attempts / 20 min per IP (prevents brute-force on OAuth callback)
+  # Auth: 10 login attempts / 20 min per IP (only count POSTs, not OAuth callbacks)
   throttle("auth/ip", limit: 10, period: 20.minutes) do |req|
-    req.ip if req.path.start_with?("/auth")
+    req.ip if req.post? && req.path.start_with?("/auth")
   end
 
   # Deploy: 20 deploys / hour per authenticated user
