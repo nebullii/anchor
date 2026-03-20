@@ -50,10 +50,10 @@ class Secret < ApplicationRecord
     end
   end
 
-  # Formats secrets as the comma-separated string Cloud Run CLI expects:
-  #   KEY1=value1,KEY2=value2
-  def self.to_cloud_run_env_string(project)
-    to_env_hash(project).map { |k, v| "#{k}=#{v}" }.join(",")
+  # Formats secrets as a YAML-safe hash suitable for --env-vars-file.
+  # Avoids comma/equals injection that --set-env-vars is vulnerable to.
+  def self.to_env_yaml(project)
+    to_env_hash(project).transform_values(&:to_s).to_yaml
   end
 
   # Masks most of the value for safe display in the UI.

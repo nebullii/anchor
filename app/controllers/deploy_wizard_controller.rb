@@ -166,7 +166,8 @@ class DeployWizardController < ApplicationController
   end
 
   def detect_repo_default_branch(repo)
-    out   = `git ls-remote --symref #{Shellwords.escape(repo.clone_url)} HEAD 2>&1`
+    url   = repo.authenticated_clone_url
+    out   = `git ls-remote --symref #{Shellwords.escape(url)} HEAD 2>&1`
     match = out.match(%r{ref: refs/heads/(\S+)\s+HEAD})
     match&.captures&.first
   rescue

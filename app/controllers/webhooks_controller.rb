@@ -4,10 +4,6 @@ class WebhooksController < ActionController::Base
   def github
     payload_body = request.body.read
 
-    unless valid_signature?(payload_body)
-      head :unauthorized and return
-    end
-
     unless request.headers["X-GitHub-Event"] == "push"
       head :ok and return
     end
@@ -22,6 +18,14 @@ class WebhooksController < ActionController::Base
       .find_by("projects.production_branch = ?", pushed_branch)
 
     head :ok and return unless project
+
+    # Verify signature against the project's own webhook secret,
+    # falling back to the global secret for backwards compatibility.
+    unless valid_signature?(payload_body, project.webhook_secret) ||
+           valid_signature?(payload_body, ENV["GITHUB_WEBHOOK_SECRET"])
+      head :unauthorized and return
+    end
+
     head :ok and return if project.has_active_deployment?
 
     deployment = project.deployments.create!(
@@ -39,8 +43,7 @@ class WebhooksController < ActionController::Base
 
   private
 
-  def valid_signature?(body)
-    secret = ENV["GITHUB_WEBHOOK_SECRET"].to_s
+  def valid_signature?(body, secret)
     return false if secret.blank?
 
     expected = "sha256=#{OpenSSL::HMAC.hexdigest('sha256', secret, body)}"
