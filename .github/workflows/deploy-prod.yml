@@ -60,7 +60,7 @@ jobs:
       GITHUB_CLIENT_SECRET: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -99,7 +99,7 @@ jobs:
     needs: [test, security]   # ← never deploys unless both jobs above pass
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Authenticate with GCP using a service account key stored in GitHub Secrets.
       # The SA needs: Artifact Registry Writer, Cloud Run Admin, Cloud Run Jobs Admin,
