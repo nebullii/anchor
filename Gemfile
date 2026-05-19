@@ -32,7 +32,7 @@ gem "google-apis-cloudbuild_v1",   "~> 0.79"
 gem "googleauth",                  "~> 1.0"
 
 # HTTP client (GitHub API calls, webhooks)
-gem "faraday", "~> 2.0"
+gem "faraday", "~> 2.14"
 
 # Rate limiting
 gem "rack-attack", "~> 6.7"
