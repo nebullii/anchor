@@ -29,7 +29,7 @@ gem "attr_encrypted", "~> 4.0"
 # Google Cloud APIs
 gem "google-apis-run_v2",          "~> 0.110"
 gem "google-apis-cloudbuild_v1",   "~> 0.79"
-gem "googleauth",                  "~> 1.0"
+gem "googleauth",                  "~> 1.17"
 
 # HTTP client (GitHub API calls, webhooks)
 gem "faraday", "~> 2.0"
