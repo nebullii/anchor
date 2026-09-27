@@ -1,0 +1,26 @@
+id: build_timeout_no_cache
+description: A monorepo build compiles native deps from source on every build and exceeds the build timeout.
+framework: nextjs
+error_message: "Build timeout: Cloud Build exceeded deadline of 1800s (DEADLINE_EXCEEDED)"
+logs: |
+  Step 3/12 : COPY . .
+  Step 4/12 : RUN npm install
+  npm WARN deprecated node-sass@7.0.3
+  > node-sass@7.0.3 postinstall
+  > node scripts/build.js
+  Building: /usr/local/bin/node /app/node_modules/node-gyp/bin/node-gyp.js rebuild --verbose
+  gyp info spawn make
+  ... (compiling libsass, 28 minutes elapsed)
+  TIMEOUT
+  ERROR: context deadline exceeded
+expect:
+  category: [build_timeout]
+  mentions_any: [node-sass, sass, cache, COPY package]
+reference:
+  summary: The build ran past the 30 minute limit while compiling node-sass from source.
+  likely_cause: node-sass is deprecated and builds libsass natively on every build; COPY . . before npm install also defeats layer caching.
+  fix_steps:
+    - Replace node-sass with the pure-JS sass package
+    - COPY package.json and package-lock.json and run npm ci before COPY . . so dependencies are cached
+  confidence: high
+  category: build_timeout

@@ -38,8 +38,9 @@
 !/app/assets/builds/.keep
 
 # Local dev notes — not for version control
-/docs/
+/docs/*
 !/docs/deployment.md
 !/docs/screenshots/
+!/docs/*.md
 /CLAUDE.md
 key.json

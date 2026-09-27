@@ -1,0 +1,23 @@
+<%# locals: (result:) %>
+<%# ── Preflight findings (errors block deploys) ─────────────────── %>
+<% findings = Array(result["preflight"]).reject { |f| f["severity"] == "info" } %>
+<% if findings.any? %>
+  <div class="rounded-xl border <%= findings.any? { |f| f["severity"] == "error" } ? "border-red-900" : "border-amber-900" %> p-4">
+    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Preflight checks</h3>
+    <ul class="space-y-3 text-sm">
+      <% findings.each do |f| %>
+        <li>
+          <p class="<%= f["severity"] == "error" ? "text-red-400" : "text-amber-400" %>">
+            <span class="uppercase text-[10px] font-semibold mr-1"><%= f["severity"] %></span><%= f["message"] %>
+          </p>
+          <% if f["file"].present? %>
+            <p class="text-xs text-gray-500 font-mono"><%= [f["file"], f["line"]].compact.join(":") %></p>
+          <% end %>
+          <% if f["fix"].present? %>
+            <p class="text-xs text-gray-400">Fix: <%= f["fix"] %></p>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>

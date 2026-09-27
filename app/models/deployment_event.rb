@@ -13,6 +13,10 @@ class DeploymentEvent < ApplicationRecord
     deploy_succeeded
     cancelled
     error_explained
+    retry_scheduled
+    timed_out
+    resumed
+    rolled_back
   ].freeze
 
   validates :event_type,   presence: true, inclusion: { in: EVENT_TYPES }

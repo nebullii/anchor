@@ -1,0 +1,25 @@
+id: db_connection_localhost
+description: DATABASE_URL is unset, so the app falls back to localhost:5432, which does not exist in the container.
+framework: django
+error_message: "django.db.utils.OperationalError: connection to server at \"localhost\" (127.0.0.1), port 5432 failed: Connection refused"
+logs: |
+  Operations to perform:
+    Apply all migrations: admin, auth, contenttypes, orders, sessions
+  Traceback (most recent call last):
+    File "/usr/local/lib/python3.12/site-packages/psycopg/connection.py", line 119, in connect
+  psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 5432 failed: Connection refused
+  	Is the server running on that host and accepting TCP/IP connections?
+  django.db.utils.OperationalError: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+  Container called exit(1).
+expect:
+  category: [database_error, missing_env_var]
+  mentions_any: [DATABASE_URL]
+reference:
+  summary: The app could not reach PostgreSQL because it tried localhost:5432 inside the container.
+  likely_cause: DATABASE_URL is not set, so settings.py falls back to a localhost database that does not exist in Cloud Run.
+  fix_steps:
+    - Provision a managed PostgreSQL instance
+    - Add its connection string as the DATABASE_URL secret
+    - Redeploy
+  confidence: high
+  category: database_error

@@ -11,6 +11,8 @@ class Project < ApplicationRecord
     europe-west1 europe-west2 europe-west3
     asia-east1 asia-northeast1
   ].freeze
+  # Kubernetes-style memory quantities accepted by Cloud Run (128Mi–32Gi).
+  MEMORY_FORMAT = /\A\d+(Mi|Gi)\z/
 
   # ------------------------------------------------------------------ #
   # Associations                                                         #
@@ -28,12 +30,18 @@ class Project < ApplicationRecord
   validates :slug,           presence: true, uniqueness: true,
                              format: { with: /\A[a-z0-9\-]+\z/,
                                        message: "only lowercase letters, numbers, and hyphens" }
-  validates :gcp_project_id, presence: true, gcp_project_id: true, unless: :draft?
+  validates :gcp_project_id, presence: true, gcp_project_id: true, unless: -> { draft? || local_docker? }
   validates :gcp_region,     presence: true, inclusion: { in: REGIONS }
   validates :status,          inclusion: { in: STATUSES }
   validates :analysis_status, inclusion: { in: ANALYSIS_STATUSES }
   validates :framework,       inclusion: { in: FRAMEWORKS }, allow_nil: true
   validates :name,           uniqueness: { scope: :user_id, message: "already exists in your account" }
+
+  # Provider settings (see Providers.for)
+  validates :provider,          inclusion: { in: Providers::NAMES }
+  validates :memory,            format: { with: MEMORY_FORMAT, message: "must look like 512Mi or 1Gi" }
+  validates :health_check_path, format: { with: %r{\A/[^\s]*\z}, message: "must start with /" }
+  validates :public_access,     inclusion: { in: [ true, false ] }
 
   # ------------------------------------------------------------------ #
   # Callbacks                                                            #
@@ -42,7 +50,10 @@ class Project < ApplicationRecord
   before_validation :set_gcp_project_id, on: :create
   before_validation :set_service_name,   on: :create
   before_validation :set_webhook_secret, on: :create
-  after_create      :enqueue_provisioning, unless: :draft?
+
+  # HMAC key for GitHub webhook deliveries — encrypted at rest (AES-256-GCM).
+  encrypts :webhook_secret
+  after_create :enqueue_provisioning, unless: -> { draft? || local_docker? }
 
   # ------------------------------------------------------------------ #
   # Scopes                                                               #
@@ -100,6 +111,15 @@ class Project < ApplicationRecord
     deployments.in_progress.exists?
   end
 
+  # Which deployment backend this project uses (see Providers::REGISTRY).
+  def local_docker?
+    provider == "local_docker"
+  end
+
+  def gcp_cloud_run?
+    provider.blank? || provider == "gcp_cloud_run"
+  end
+
   def cicd_ready?
     cicd_setup_status == "ready"
   end
@@ -123,7 +143,7 @@ class Project < ApplicationRecord
   private
 
   def set_gcp_project_id
-    return if draft?
+    return if draft? || local_docker?
     self.gcp_project_id ||= user&.gcp_project_from_key
   end
 

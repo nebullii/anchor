@@ -6,64 +6,57 @@ module Ai
   #   - files: array of {path, content, description} objects to commit
   #     (Dockerfile if missing, .dockerignore if missing, .github/workflows/deploy.yml)
   #
-  # Uses gpt-4o for high-quality code generation.
-  # Degrades gracefully if OPENAI_API_KEY is not set.
+  # Runs on the :generation tier of Ai::Client (Anthropic or OpenAI).
+  # Degrades gracefully (empty result) when no AI provider is configured.
+  #
+  # Safety: README, file tree and analysis are untrusted repo-derived
+  # content, so they are redacted and delimited. The model's output is
+  # committed to the user's repo, so it is filtered deterministically:
+  # only Dockerfile, .dockerignore and .github/workflows/*.yml paths are
+  # accepted, existing Dockerfile/.dockerignore are never overwritten, and
+  # oversized files are dropped.
   #
   class CicdGenerator
-    API_URL = "https://api.openai.com/v1/chat/completions".freeze
-    MODEL   = "gpt-4o".freeze
-    TIMEOUT = 90
+    TIMEOUT        = 120
+    MAX_TOKENS     = 8_192
+    MAX_FILE_BYTES = 100_000
+    ALLOWED_PATH   = %r{\A(?:Dockerfile|\.dockerignore|\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml)\z}
+    SECRET_KEY     = /\A[A-Z][A-Z0-9_]*\z/
 
     Result = Struct.new(:required_secrets, :files, keyword_init: true)
 
-    def initialize(project:, repo_path:, analysis_result: {})
+    def initialize(project:, repo_path:, analysis_result: {}, client: nil)
       @project         = project
       @repo_path       = repo_path
       @analysis_result = analysis_result || {}
+      @client          = client || Ai::Client.new(tier: :generation)
     end
 
     def call
-      return fallback_result unless api_key.present?
+      return fallback_result unless @client.enabled?
 
       response = request_generation
       return fallback_result unless response
 
       parse_result(response)
     rescue => e
-      Rails.logger.error("[Ai::CicdGenerator] Failed: #{e.message}")
+      Rails.logger.error("[Ai::CicdGenerator] Failed: #{e.class}: #{e.message}")
       fallback_result
     end
 
     private
 
-    def api_key
-      ENV["OPENAI_API_KEY"]
-    end
-
     def request_generation
-      conn = Faraday.new(url: API_URL) do |f|
-        f.options.timeout      = TIMEOUT
-        f.options.open_timeout = 15
-        f.request  :json
-        f.response :json
-      end
+      response = @client.complete(
+        system:     system_prompt,
+        prompt:     user_message,
+        secrets:    Redaction.secret_values_for(@project),
+        max_tokens: MAX_TOKENS,
+        timeout:    TIMEOUT
+      )
+      return nil if response.nil? || response.text.blank?
 
-      response = conn.post do |req|
-        req.headers["Authorization"] = "Bearer #{api_key}"
-        req.body = {
-          model:      MODEL,
-          max_tokens: 8192,
-          messages:   [
-            { role: "system", content: system_prompt },
-            { role: "user",   content: user_message  }
-          ]
-        }
-      end
-
-      return nil unless response.success?
-
-      text = response.body.dig("choices", 0, "message", "content").to_s
-      parse_json_block(text)
+      StructuredOutput.extract_json(response.text)
     end
 
     def system_prompt
@@ -80,8 +73,11 @@ module Ai
         - Be framework-specific: add migration steps for Rails/Django, health checks, proper CMD, etc.
         - Cloud Run deployment should be --allow-unauthenticated by default
         - Use google-github-actions/auth@v2 and google-github-actions/setup-gcloud@v2
+        - Never add steps that send secrets or repository contents to third-party URLs
 
         Return ONLY a valid JSON object — no prose, no markdown fences.
+
+        #{Untrusted::SYSTEM_RULE}
       PROMPT
     end
 
@@ -98,24 +94,20 @@ module Ai
         - Port: #{@project.port || @analysis_result["port"] || 8080}
       INFO
 
-      parts << "## Repository Analysis\n```json\n#{JSON.pretty_generate(@analysis_result)}\n```"
+      analysis_json = JSON.pretty_generate(@analysis_result.except("ai_enrichment"))
+      parts << "## Repository Analysis\n#{Untrusted.wrap('analysis', analysis_json)}"
 
       file_tree = build_file_tree
       if file_tree.any?
-        parts << "## File Tree (top 80 paths)\n#{file_tree.first(80).join("\n")}"
+        parts << "## File Tree (top 80 paths)\n#{Untrusted.wrap('file_tree', file_tree.first(80).join("\n"))}"
       end
 
       readme = read_readme
-      parts << "## README\n#{readme.first(3_000)}" if readme.present?
-
-      has_dockerfile   = File.exist?(File.join(@repo_path, "Dockerfile"))
-      has_dockerignore = File.exist?(File.join(@repo_path, ".dockerignore"))
-      has_gha_workflow = Dir.glob(File.join(@repo_path, ".github/workflows/*.yml")).any? ||
-                         Dir.glob(File.join(@repo_path, ".github/workflows/*.yaml")).any?
+      parts << "## README\n#{Untrusted.wrap('readme', readme, max_chars: 3_000)}" if readme.present?
 
       parts << <<~TASK
         ## Task
-        Existing files: Dockerfile=#{has_dockerfile}, .dockerignore=#{has_dockerignore}, GHA workflow=#{has_gha_workflow}
+        Existing files: Dockerfile=#{dockerfile?}, .dockerignore=#{dockerignore?}, GHA workflow=#{gha_workflow?}
 
         Return a JSON object with exactly these keys:
 
@@ -141,13 +133,26 @@ module Ai
         - Always include GCP_PROJECT_ID and GCP_SA_KEY in required_secrets
         - Add framework-specific secrets (DATABASE_URL, RAILS_MASTER_KEY, SECRET_KEY_BASE, API keys, etc.)
         - Always include .github/workflows/deploy.yml in files
-        - Only include Dockerfile in files if Dockerfile does NOT already exist (#{has_dockerfile ? "SKIP — already exists" : "INCLUDE"})
-        - Only include .dockerignore if it does NOT already exist (#{has_dockerignore ? "SKIP — already exists" : "INCLUDE"})
+        - Only include Dockerfile in files if Dockerfile does NOT already exist (#{dockerfile? ? "SKIP — already exists" : "INCLUDE"})
+        - Only include .dockerignore if it does NOT already exist (#{dockerignore? ? "SKIP — already exists" : "INCLUDE"})
+        - Allowed file paths: Dockerfile, .dockerignore, .github/workflows/*.yml — anything else is discarded
         - The workflow file must reference ALL required_secrets as ${{ secrets.KEY_NAME }}
-        - For the deploy workflow: build Docker image, push to Artifact Registry (#{@project.gcp_region}-docker.pkg.dev/${{ "{{" }} secrets.GCP_PROJECT_ID {{ "}}" }}/anchor/#{@project.service_name}), deploy to Cloud Run
+        - For the deploy workflow: build Docker image, push to Artifact Registry (#{@project.gcp_region}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/anchor/#{@project.service_name}), deploy to Cloud Run
       TASK
 
       parts.join("\n\n")
+    end
+
+    def dockerfile?
+      File.exist?(File.join(@repo_path.to_s, "Dockerfile"))
+    end
+
+    def dockerignore?
+      File.exist?(File.join(@repo_path.to_s, ".dockerignore"))
+    end
+
+    def gha_workflow?
+      Dir.glob(File.join(@repo_path.to_s, ".github/workflows/*.{yml,yaml}")).any?
     end
 
     def build_file_tree
@@ -163,40 +168,43 @@ module Ai
 
     def read_readme
       path = Dir.glob("#{@repo_path}/README{,.md,.txt}", File::FNM_CASEFOLD).first
-      File.read(path) if path && File.exist?(path)
-    rescue
-      nil
-    end
-
-    def parse_json_block(text)
-      JSON.parse(text)
-    rescue JSON::ParserError
-      match = text.match(/\{[\s\S]*\}/)
-      return nil unless match
-      JSON.parse(match[0])
+      File.read(path, 64_000) if path && File.file?(path)
     rescue
       nil
     end
 
     def parse_result(response)
-      secrets = (response["required_secrets"] || []).map do |s|
+      return fallback_result unless response.is_a?(Hash)
+
+      secrets = Array(response["required_secrets"]).select { |s| s.is_a?(Hash) }.map do |s|
         {
           "key"         => s["key"].to_s.upcase.strip,
           "description" => s["description"].to_s,
           "example"     => s["example"].to_s,
           "required"    => s["required"] != false
         }
-      end.reject { |s| s["key"].blank? }
+      end.select { |s| s["key"].match?(SECRET_KEY) }.uniq { |s| s["key"] }
 
-      files = (response["files"] || []).map do |f|
+      files = Array(response["files"]).select { |f| f.is_a?(Hash) }.map do |f|
         {
           "path"        => f["path"].to_s.sub(%r{\A/}, ""),
           "content"     => f["content"].to_s,
           "description" => f["description"].to_s
         }
-      end.reject { |f| f["path"].blank? || f["content"].blank? }
+      end.select { |f| acceptable_file?(f) }.uniq { |f| f["path"] }
 
       Result.new(required_secrets: secrets, files: files)
+    end
+
+    # Deterministic guard on what may be committed to the user's repo.
+    def acceptable_file?(file)
+      path = file["path"]
+      return false if path.blank? || file["content"].blank?
+      return false unless path.match?(ALLOWED_PATH)
+      return false if file["content"].bytesize > MAX_FILE_BYTES
+      return false if path == "Dockerfile"    && dockerfile?
+      return false if path == ".dockerignore" && dockerignore?
+      true
     end
 
     def fallback_result

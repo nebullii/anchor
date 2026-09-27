@@ -1,0 +1,25 @@
+id: bad_dockerfile_copy
+description: Dockerfile copies Gemfile.lock which is gitignored, so the build context does not contain it.
+framework: rails
+error_message: "Cloud Build failed: step 0 exited with status 1"
+logs: |
+  Step #0: Sending build context to Docker daemon  1.2MB
+  Step #0: Step 1/9 : FROM ruby:3.4-slim
+  Step #0:  ---> 8d2f6a1b7c90
+  Step #0: Step 2/9 : WORKDIR /app
+  Step #0:  ---> Using cache
+  Step #0: Step 3/9 : COPY Gemfile Gemfile.lock ./
+  Step #0: COPY failed: file not found in build context or excluded by .dockerignore: stat Gemfile.lock: file does not exist
+  Finished Step #0
+  ERROR: build step 0 "gcr.io/cloud-builders/docker" failed: step exited with non-zero status: 1
+expect:
+  category: [dockerfile_error, build_error]
+  mentions_any: [Gemfile.lock, .dockerignore, .gitignore]
+reference:
+  summary: The Docker build failed because Gemfile.lock is not in the build context.
+  likely_cause: Gemfile.lock is not committed (or is excluded by .dockerignore), but the Dockerfile COPYs it.
+  fix_steps:
+    - Run bundle install locally and commit Gemfile.lock
+    - Make sure .dockerignore does not exclude Gemfile.lock
+  confidence: high
+  category: dockerfile_error

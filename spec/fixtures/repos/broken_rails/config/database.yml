@@ -1,0 +1,6 @@
+default: &default
+  adapter: sqlite3
+
+development:
+  <<: *default
+  database: db/development.sqlite3

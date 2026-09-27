@@ -38,7 +38,7 @@
       </div>
       <div class="flex justify-between gap-2">
         <span class="text-gray-500">Region</span>
-        <span class="text-gray-200 font-mono text-xs"><%= deployment.project.gcp_region %></span>
+        <span class="text-gray-200 font-mono text-xs"><%= deploy_location(deployment.project) %></span>
       </div>
       <div class="flex justify-between gap-2">
         <span class="text-gray-500">Runtime</span>
@@ -80,8 +80,9 @@
         </p>
         <p class="text-sm text-red-200/80 leading-relaxed"><%= deployment.ai_error_explanation %></p>
       </div>
-    <% elsif deployment.failed? %>
-      <%# Placeholder while ExplainErrorJob is still running %>
+    <% elsif deployment.failed? && Ai::Config.enabled? && deployment.finished_at.to_i > 2.minutes.ago.to_i %>
+      <%# Placeholder while ExplainErrorJob is still running (only when an AI
+          provider is configured, and not forever if the job gave up) %>
       <div class="mt-4 pt-4 border-t border-red-800/40">
         <p class="text-xs text-red-600 animate-pulse">Analyzing failure…</p>
       </div>

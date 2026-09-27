@@ -31,3 +31,10 @@ trap("TERM") { Process.kill("TERM", sidekiq_pid) rescue nil }
 trap("INT")  { Process.kill("INT",  sidekiq_pid) rescue nil }
 
 Process.wait(sidekiq_pid)
+
+# Propagate Sidekiq's exit status. If Sidekiq crashes, the container must exit
+# non-zero so Cloud Run replaces the instance instead of leaving a "healthy"
+# health-check thread in front of a dead worker (min-instances=1 keeps one up).
+status = $?
+STDERR.puts "[worker] sidekiq exited (#{status.inspect})" unless status&.success?
+exit(status&.exitstatus || 1)

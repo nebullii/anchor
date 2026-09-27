@@ -1,0 +1,22 @@
+{
+  "name": "anchor-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets coding agents deploy and operate apps on Anchor via its JSON API",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "anchor-mcp": "bin/anchor-mcp.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/anchor-mcp.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}

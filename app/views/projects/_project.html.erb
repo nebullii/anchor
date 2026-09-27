@@ -22,7 +22,7 @@
 
   <% if project.framework.present? %>
     <p class="mb-3 text-xs text-slate-400">
-      <%= raw framework_icon(project.framework) %> <%= project.framework %> &middot; <%= project.gcp_region %>
+      <%= raw framework_icon(project.framework) %> <%= project.framework %> &middot; <%= deploy_location(project) %>
     </p>
   <% end %>
 

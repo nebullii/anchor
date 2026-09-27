@@ -1,0 +1,32 @@
+id: npm_build_typescript_error
+description: Next.js build fails on a TypeScript type error during `npm run build` in the Dockerfile.
+framework: nextjs
+error_message: "Build failed: The command '/bin/sh -c npm run build' returned a non-zero code: 1"
+logs: |
+  Step 6/10 : RUN npm ci
+  added 412 packages, and audited 413 packages in 18s
+  Step 7/10 : RUN npm run build
+  > web@0.1.0 build
+  > next build
+    ▲ Next.js 15.2.0
+     Creating an optimized production build ...
+   ✓ Compiled successfully
+     Linting and checking validity of types ...
+  Failed to compile.
+  ./app/checkout/page.tsx:42:17
+  Type error: Property 'totalCents' does not exist on type 'Cart'. Did you mean 'total_cents'?
+    40 |   return (
+    41 |     <div>
+  > 42 |       {formatMoney(cart.totalCents)}
+  The command '/bin/sh -c npm run build' returned a non-zero code: 1
+expect:
+  category: [build_error, dockerfile_error]
+  mentions_any: [totalCents, total_cents, page.tsx, type error]
+reference:
+  summary: next build failed on a TypeScript type error in app/checkout/page.tsx.
+  likely_cause: "cart.totalCents does not exist on type Cart; the field is total_cents."
+  fix_steps:
+    - Change cart.totalCents to cart.total_cents in app/checkout/page.tsx line 42
+    - Run npm run build locally to confirm, then push
+  confidence: high
+  category: build_error

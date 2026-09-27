@@ -1,10 +1,39 @@
 module Deployments
+  # Shared behaviour for every step of the deployment pipeline.
+  #
+  # Error policy:
+  #   - Deployments::TransientError (and Providers::TransientError, once the
+  #     provider layer exists) is retried by ActiveJob with bounded exponential
+  #     backoff. After MAX_ATTEMPTS the deployment is marked failed.
+  #   - Deployments::DeploymentError (and any other error) fails the
+  #     deployment immediately.
+  #   - Deployment::InvalidTransition means the deployment moved on without us
+  #     (user cancelled, reaper timed it out) — the job stops quietly.
+  #
   class BaseJob < ApplicationJob
     queue_as :deployments
 
-    # Deployment jobs must not auto-retry — a failed step leaves the deployment
-    # in a terminal "failed" state. The user re-triggers from the UI.
+    # Total executions for a transiently-failing step (1 run + 4 retries).
+    MAX_ATTEMPTS       = 5
+    RETRY_BASE_SECONDS = 15
+    RETRY_MAX_SECONDS  = 5.minutes.to_i
+
+    # Retries are handled by ActiveJob (retry_on below), not Sidekiq, so the
+    # retry count and the "give up" hook live in one place and work with any
+    # queue adapter. Sidekiq retry stays 0 to avoid double retries.
     sidekiq_options retry: 0
+
+    # 15s, 30s, 60s, 120s (+ up to 15% jitter), capped at 5 minutes.
+    def self.retry_delay(executions)
+      base = [ RETRY_BASE_SECONDS * (2**(executions - 1)), RETRY_MAX_SECONDS ].min
+      base + rand(0..(base * 0.15).to_i)
+    end
+
+    retry_on Deployments::TransientError,
+             attempts: MAX_ATTEMPTS,
+             wait:     ->(executions) { retry_delay(executions) } do |job, error|
+      job.send(:retries_exhausted!, error)
+    end
 
     private
 
@@ -13,17 +42,55 @@ module Deployments
     def with_deployment(deployment_id)
       deployment = Deployment.find(deployment_id)
       yield deployment
-    rescue Deployments::TransientError => e
-      # Transient errors are logged but NOT marked as failed — re-raise for Sidekiq retry.
-      Rails.logger.warn("[#{self.class.name}] Transient error on deployment #{deployment_id}: #{e.message}")
-      raise
-    rescue Deployments::DeploymentError => e
-      fail_deployment!(deployment, e.message)
+    rescue Deployment::InvalidTransition => e
+      # Cancelled or reaped while this job was running — nothing left to do.
+      Rails.logger.info("[#{self.class.name}] Stopping: #{e.message}")
     rescue ActiveRecord::RecordNotFound
       Rails.logger.error("[#{self.class.name}] Deployment #{deployment_id} not found — discarding job.")
     rescue => e
-      fail_deployment!(deployment, "#{e.class}: #{e.message}")
-      raise  # re-raise so Sidekiq marks the job as failed in its UI
+      if transient_error?(e)
+        note_transient_error(deployment, e)
+        # Normalise provider errors so retry_on sees a single class.
+        raise e.is_a?(Deployments::TransientError) ? e : Deployments::TransientError.new(e.message)
+      elsif e.is_a?(Deployments::DeploymentError)
+        fail_deployment!(deployment, e.message)
+      else
+        fail_deployment!(deployment, "#{e.class}: #{e.message}")
+        raise  # re-raise so Sidekiq shows the job as failed in its UI
+      end
+    end
+
+    def transient_error?(error)
+      return true if error.is_a?(Deployments::TransientError)
+      defined?(::Providers::TransientError) && error.is_a?(::Providers::TransientError)
+    end
+
+    def note_transient_error(deployment, error)
+      Rails.logger.warn(
+        "[#{self.class.name}] Transient error on deployment #{deployment&.id} " \
+        "(attempt #{executions}/#{MAX_ATTEMPTS}): #{error.message}"
+      )
+      return unless deployment
+
+      if executions < MAX_ATTEMPTS
+        deployment.append_log(
+          "Temporary error (attempt #{executions}/#{MAX_ATTEMPTS}): #{error.message} — retrying.",
+          level: "warn"
+        )
+        DeploymentEvent.record(deployment, "retry_scheduled",
+                               metadata: { job: self.class.name, attempt: executions, error: error.message })
+      end
+    rescue => e
+      Rails.logger.warn("[#{self.class.name}] Could not record transient error: #{e.message}")
+    end
+
+    # Called by retry_on once MAX_ATTEMPTS transient failures have happened.
+    def retries_exhausted!(error)
+      deployment = Deployment.find_by(id: arguments.first)
+      fail_deployment!(
+        deployment,
+        "#{error.message} (gave up after #{MAX_ATTEMPTS} attempts)"
+      )
     end
 
     # Guards against running a step when the deployment is already in a terminal
@@ -38,15 +105,18 @@ module Deployments
       throw :skip
     end
 
+    # Fails the deployment unless it already finished (e.g. was cancelled while
+    # this job ran). Only a deployment we actually failed gets hints + AI help.
     def fail_deployment!(deployment, message)
       return unless deployment
       Rails.logger.error("[#{self.class.name}] Deployment #{deployment.id} failed: #{message}")
+
       category = Deployments::ErrorCategorizer.categorize(message)
-      deployment.update!(error_message: message, error_category: category)
+      return unless deployment.fail!(message, category: category)
+
       deployment.append_log(message, level: "error")
       hint = Deployments::ErrorCategorizer.user_hint(category)
       deployment.append_log("Hint: #{hint}", level: "error") if hint.present?
-      deployment.transition_to!("failed")
       ExplainErrorJob.perform_later(deployment.id)
     end
 

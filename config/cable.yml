@@ -2,8 +2,11 @@
 # and seeing results in the browser, you must do so from the web console (running inside the dev process),
 # not a terminal started via bin/rails console! Add "console" to any action or any ERB template view
 # to make the web console appear.
+# Development uses Redis so broadcasts from the Sidekiq process (live deploy
+# logs) reach the browser; the async adapter only works within one process.
 development:
-  adapter: async
+  adapter: redis
+  url: <%= ENV.fetch("REDIS_URL", "redis://localhost:6379/1") %>
 
 test:
   adapter: test

@@ -1,0 +1,3 @@
+{
+  "tasks": { "build": { "outputs": [".next/**", "dist/**"] } }
+}

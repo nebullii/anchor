@@ -19,6 +19,7 @@ class User < ApplicationRecord
   has_many :repositories, dependent: :destroy
   has_many :projects,     dependent: :destroy
   has_many :deployments,  through: :projects
+  has_many :api_tokens,   dependent: :destroy
 
   # ------------------------------------------------------------------ #
   # Validations                                                          #
@@ -161,19 +162,46 @@ class User < ApplicationRecord
   # ------------------------------------------------------------------ #
   # Deployment quotas                                                    #
   # ------------------------------------------------------------------ #
+  # Per-user deploy quota. This is separate from (and looser than) the
+  # Rack::Attack request throttle, which caps deploy *requests* per hour.
   DAILY_DEPLOY_LIMIT   = 20
   MONTHLY_DEPLOY_LIMIT = 200
 
+  # Read-only check, e.g. for showing/hiding the deploy button. Do NOT use it to
+  # gate a deploy: check-then-increment races. Use consume_deploy_quota!.
   def within_deploy_quota?
     reset_quota_if_needed!
     deployments_today < DAILY_DEPLOY_LIMIT &&
       deployments_this_month < MONTHLY_DEPLOY_LIMIT
   end
 
-  def increment_deploy_quota!
+  # Atomically reserves one deploy from the quota. A single conditional UPDATE
+  # does the check and the increment, so N concurrent requests can never push
+  # the count past the limit. Returns true if a slot was reserved.
+  def consume_deploy_quota!
     reset_quota_if_needed!
-    increment!(:deployments_today)
-    increment!(:deployments_this_month)
+    reserved = self.class
+      .where(id: id)
+      .where("deployments_today < ? AND deployments_this_month < ?", DAILY_DEPLOY_LIMIT, MONTHLY_DEPLOY_LIMIT)
+      .update_all("deployments_today = deployments_today + 1, deployments_this_month = deployments_this_month + 1")
+    reload_quota_columns
+    reserved == 1
+  end
+
+  # Gives back a slot reserved by consume_deploy_quota! when the deploy could
+  # not actually be created (e.g. lost a race for the active-deployment slot).
+  def release_deploy_quota!
+    self.class.where(id: id).update_all(
+      "deployments_today = GREATEST(deployments_today - 1, 0), " \
+      "deployments_this_month = GREATEST(deployments_this_month - 1, 0)"
+    )
+    reload_quota_columns
+  end
+
+  # Kept for existing callers; now atomic. Prefer consume_deploy_quota! and
+  # check its return value.
+  def increment_deploy_quota!
+    consume_deploy_quota!
   end
 
   # ------------------------------------------------------------------ #
@@ -195,15 +223,32 @@ class User < ApplicationRecord
 
   private
 
+  # Resets the daily counter at midnight and the monthly counter when the
+  # month changes. The UPDATE is conditional on the quota_reset_at we read, so
+  # concurrent callers reset at most once (compare-and-set).
   def reset_quota_if_needed!
     now = Time.current
-    return unless quota_reset_at.nil? || now > quota_reset_at
+    previous_reset_at = quota_reset_at
+    return unless previous_reset_at.nil? || now >= previous_reset_at
 
-    reset_at = now.beginning_of_day + 1.day
-    update_columns(
-      deployments_today:      0,
-      deployments_this_month: now.day == 1 ? 0 : deployments_this_month,
-      quota_reset_at:         reset_at
-    )
+    # quota_reset_at is "midnight after the last reset", so the last reset
+    # happened on the day before it.
+    new_month = previous_reset_at.nil? ||
+                (previous_reset_at - 1.day).beginning_of_month < now.beginning_of_month
+
+    updates = { deployments_today: 0, quota_reset_at: now.beginning_of_day + 1.day }
+    updates[:deployments_this_month] = 0 if new_month
+
+    self.class.where(id: id, quota_reset_at: previous_reset_at).update_all(updates)
+    reload_quota_columns
+  end
+
+  def reload_quota_columns
+    fresh = self.class.where(id: id)
+                      .pick(:deployments_today, :deployments_this_month, :quota_reset_at)
+    return unless fresh
+
+    self.deployments_today, self.deployments_this_month, self.quota_reset_at = fresh
+    clear_attribute_changes(%i[deployments_today deployments_this_month quota_reset_at])
   end
 end

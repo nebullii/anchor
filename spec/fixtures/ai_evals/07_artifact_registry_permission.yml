@@ -1,0 +1,25 @@
+id: artifact_registry_permission_denied
+description: The deploy service account lacks Artifact Registry Writer, so the image push is denied.
+framework: fastapi
+error_message: "PERMISSION_DENIED: Permission 'artifactregistry.repositories.uploadArtifacts' denied on resource"
+logs: |
+  Successfully built 91ab22cd01ef
+  Successfully tagged us-central1-docker.pkg.dev/acme-prod/anchor/api:3c9e1f2
+  PUSH
+  Pushing us-central1-docker.pkg.dev/acme-prod/anchor/api:3c9e1f2
+  The push refers to repository [us-central1-docker.pkg.dev/acme-prod/anchor/api]
+  denied: Permission "artifactregistry.repositories.uploadArtifacts" denied on resource "projects/acme-prod/locations/us-central1/repositories/anchor" (or it may not exist)
+  ERROR: push attempt 1 detected failure, retrying: step exited with non-zero status: 1
+  ERROR: failed to push because we ran out of retries.
+expect:
+  category: [auth_error]
+  mentions_any: [Artifact Registry Writer, artifactregistry.writer, roles/artifactregistry, IAM]
+reference:
+  summary: Pushing the image to Artifact Registry was denied.
+  likely_cause: The Cloud Build / deploy service account does not have the Artifact Registry Writer role on the anchor repository (or the repository does not exist).
+  fix_steps:
+    - Grant roles/artifactregistry.writer to the deploy service account on project acme-prod
+    - Confirm the us-central1 repository "anchor" exists
+    - Redeploy
+  confidence: high
+  category: auth_error

@@ -1,0 +1,251 @@
+name: Deploy (reusable)
+
+# Shared by deploy-staging.yml and deploy-prod.yml. Anchor deploys itself the
+# way it deploys user apps: build → migrate → new revision with NO traffic →
+# smoke-test that revision on its own tagged URL → shift traffic → verify the
+# public URL → roll traffic back automatically if anything fails.
+#
+# Authentication: keyless Workload Identity Federation when the repository
+# variables GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_DEPLOY_SERVICE_ACCOUNT are
+# set (recommended). Otherwise it falls back to the legacy GCP_SA_KEY secret.
+#
+# Approval: the job runs in the GitHub Environment named by `environment`.
+# Configure "Required reviewers" on the production environment in
+# Settings → Environments so every prod deploy waits for a human.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment (staging | production)
+        type: string
+        required: true
+      service:
+        type: string
+        required: true
+      worker:
+        type: string
+        required: true
+      migrate_job:
+        type: string
+        required: true
+      secret_prefix:
+        type: string
+        required: true
+      web_max_instances:
+        type: number
+        default: 3
+
+permissions:
+  contents: read
+  id-token: write   # Workload Identity Federation
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.verify.outputs.url }}
+    timeout-minutes: 45
+
+    env:
+      PROJECT_ID:  ${{ secrets.GCP_PROJECT_ID }}
+      REGION:      ${{ secrets.GCP_REGION }}
+      SERVICE:     ${{ inputs.service }}
+      WORKER:      ${{ inputs.worker }}
+      MIGRATE_JOB: ${{ inputs.migrate_job }}
+      IMAGE:       ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/anchor/app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Authenticate ───────────────────────────────────────────────── #
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Authenticate to Google Cloud (legacy JSON key)
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER == ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # ── Build ──────────────────────────────────────────────────────── #
+      - name: Ensure Artifact Registry repository exists
+        run: |
+          gcloud artifacts repositories describe anchor --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1 ||
+            gcloud artifacts repositories create anchor --repository-format=docker \
+              --location="$REGION" --project="$PROJECT_ID" --description="Anchor images"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      # Values are Secret Manager references (name:version), not secrets.
+      - name: Compose Secret Manager references
+        run: |
+          p="${{ inputs.secret_prefix }}"
+          core="RAILS_MASTER_KEY=${p}-rails-master-key:latest,SECRET_KEY_BASE=${p}-secret-key-base:latest"
+          core="${core},ENCRYPTION_KEY=${p}-encryption-key:latest,DATABASE_URL=${p}-database-url:latest"
+          app="${core},REDIS_URL=${p}-redis-url:latest,GITHUB_CLIENT_SECRET=${p}-github-client-secret:latest"
+          app="${app},GOOGLE_CLIENT_SECRET=${p}-google-client-secret:latest"
+          app="${app},ANTHROPIC_API_KEY=${p}-anthropic-api-key:latest,OPENAI_API_KEY=${p}-openai-api-key:latest"
+          {
+            echo "MIGRATE_SECRETS=${core}"
+            echo "WORKER_SECRETS=${app}"
+            echo "WEB_SECRETS=${app},GITHUB_WEBHOOK_SECRET=${p}-github-webhook-secret:latest"
+          } >> "$GITHUB_ENV"
+
+      # ── Record what is serving now (rollback target) ───────────────── #
+      - name: Record the revision currently serving traffic
+        id: previous
+        run: |
+          if gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" \
+               --format=json > service.json 2>/dev/null; then
+            rev=$(jq -r '[.status.traffic[]? | select(.percent == 100)][0].revisionName // empty' service.json)
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "revision=${rev}" >> "$GITHUB_OUTPUT"
+            echo "Currently serving: ${rev:-<unknown>}"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "First deploy of $SERVICE — there is no previous revision to fall back to."
+          fi
+
+      # ── Migrate ────────────────────────────────────────────────────── #
+      # Migrations run before the new code takes traffic, so they must be
+      # backward compatible with the revision still serving (expand/contract).
+      # CI enforces this with script/check_migrations.rb.
+      - name: Run database migrations
+        run: |
+          gcloud run jobs delete "$MIGRATE_JOB" --region="$REGION" --project="$PROJECT_ID" --quiet 2>/dev/null || true
+          gcloud run jobs create "$MIGRATE_JOB" \
+            --image="$IMAGE:${{ github.sha }}" --region="$REGION" --project="$PROJECT_ID" \
+            --command=bundle --args=exec,rails,db:migrate \
+            --max-retries=1 --task-timeout=600 --memory=512Mi --cpu=1 \
+            --set-env-vars="RAILS_ENV=production,RAILS_LOG_TO_STDOUT=true" \
+            --set-secrets="$MIGRATE_SECRETS"
+          gcloud run jobs execute "$MIGRATE_JOB" --region="$REGION" --project="$PROJECT_ID" --wait
+
+      # ── Deploy web with no traffic ─────────────────────────────────── #
+      - name: Deploy new web revision (no traffic)
+        id: candidate
+        run: |
+          tag="c-${GITHUB_SHA::7}"
+          flags=(
+            --image="$IMAGE:${{ github.sha }}" --region="$REGION" --project="$PROJECT_ID"
+            --platform=managed --allow-unauthenticated --port=8080
+            --min-instances=0 --max-instances=${{ inputs.web_max_instances }}
+            --memory=256Mi --cpu=1 --cpu-throttling --timeout=60
+            --set-env-vars="RAILS_ENV=production,RAILS_LOG_TO_STDOUT=true,RAILS_SERVE_STATIC_FILES=true"
+            --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}"
+            --set-secrets="$WEB_SECRETS"
+            --tag="$tag"
+          )
+          # Cloud Run rejects --no-traffic when it creates a service.
+          [ "${{ steps.previous.outputs.exists }}" = "true" ] && flags+=(--no-traffic)
+          gcloud run deploy "$SERVICE" "${flags[@]}"
+
+          gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format=json > service.json
+          rev=$(jq -r --arg t "$tag" '.status.traffic[] | select(.tag == $t) | .revisionName' service.json)
+          url=$(jq -r --arg t "$tag" '.status.traffic[] | select(.tag == $t) | .url' service.json)
+          [ -n "$rev" ] && [ -n "$url" ] || { echo "::error::could not resolve the new revision"; exit 1; }
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Candidate $rev at $url"
+
+      - name: Smoke-test the new revision before it gets traffic
+        env:
+          URL: ${{ steps.candidate.outputs.url }}
+        run: |
+          for path in /healthz /readyz; do
+            ok=""
+            for attempt in $(seq 1 12); do
+              code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 15 "$URL$path" || true)
+              if [ "$code" = "200" ]; then ok=1; echo "$path → 200"; break; fi
+              echo "$path → ${code:-no response} (attempt $attempt/12)"; sleep 10
+            done
+            [ -n "$ok" ] || { echo "::error::$path never returned 200 on the new revision"; cat /tmp/body || true; exit 1; }
+          done
+
+      - name: Shift 100% of traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region="$REGION" --project="$PROJECT_ID" \
+            --to-revisions="${{ steps.candidate.outputs.revision }}=100"
+
+      - name: Verify the public URL
+        id: verify
+        run: |
+          url=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          for _ in $(seq 1 6); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url/readyz")" = "200" ] && { echo "$url/readyz → 200"; exit 0; }
+            sleep 10
+          done
+          echo "::error::$url/readyz is not healthy after the traffic shift"
+          exit 1
+
+      # ── Worker ─────────────────────────────────────────────────────── #
+      # min-instances=1 is required: nothing wakes a scaled-to-zero Sidekiq.
+      # Cost: roughly $45–55/month per environment (1 vCPU / 512Mi, always on).
+      - name: Deploy Sidekiq worker
+        id: worker
+        run: |
+          gcloud run deploy "$WORKER" \
+            --image="$IMAGE:${{ github.sha }}" --region="$REGION" --project="$PROJECT_ID" \
+            --platform=managed --no-allow-unauthenticated --command=/rails/bin/worker \
+            --min-instances=1 --max-instances=1 --memory=512Mi --cpu=1 --no-cpu-throttling --timeout=3600 \
+            --set-env-vars="RAILS_ENV=production,RAILS_LOG_TO_STDOUT=true" \
+            --set-env-vars="GITHUB_CLIENT_ID=${{ secrets.GH_CLIENT_ID }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-secrets="$WORKER_SECRETS"
+
+      - name: Verify the worker is processing (readyz checks the Sidekiq heartbeat)
+        run: |
+          url="${{ steps.verify.outputs.url }}"
+          for _ in $(seq 1 9); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url/readyz")" = "200" ] && { echo "worker healthy"; exit 0; }
+            sleep 10
+          done
+          echo "::error::/readyz unhealthy after the worker deploy"
+          exit 1
+
+      - name: Drop the candidate tag
+        if: success()
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region="$REGION" --project="$PROJECT_ID" \
+            --remove-tags="c-${GITHUB_SHA::7}" || true
+
+      # ── Automatic rollback ─────────────────────────────────────────── #
+      - name: Roll web traffic back to the previous revision
+        if: failure() && steps.previous.outputs.revision != ''
+        run: |
+          echo "::warning::Deploy failed — restoring ${{ steps.previous.outputs.revision }}"
+          gcloud run services update-traffic "$SERVICE" --region="$REGION" --project="$PROJECT_ID" \
+            --to-revisions="${{ steps.previous.outputs.revision }}=100"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ inputs.environment }} deploy: ${{ job.status }}"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- New revision: \`${{ steps.candidate.outputs.revision || 'n/a' }}\`"
+            echo "- Previous revision: \`${{ steps.previous.outputs.revision || 'n/a' }}\`"
+            echo "- URL: ${{ steps.verify.outputs.url || 'n/a' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

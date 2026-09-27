@@ -148,7 +148,7 @@ Cloud Run does not include Redis. Options:
 
 **Redis Cloud (recommended for most teams):**
 Create a free database at [redis.com](https://redis.com) or [Upstash](https://upstash.com).
-Copy the `redis://...` connection URL → `REDIS_URL_PROD` secret.
+Copy the `redis://...` connection URL into the `anchor-prod-redis-url` Secret Manager secret.
 
 **Cloud Memorystore (GCP-native, VPC required):**
 ```bash
@@ -172,37 +172,29 @@ Update the URL after the first deploy.
 
 ---
 
-## GitHub Secrets configuration
+## Secrets configuration
 
-Go to **GitHub → your repo → Settings → Secrets and variables → Actions → New repository secret**.
+Runtime secrets (`RAILS_MASTER_KEY`, `SECRET_KEY_BASE`, `ENCRYPTION_KEY`, `DATABASE_URL`, `REDIS_URL`,
+the OAuth client secrets, `OPENAI_API_KEY` and `GITHUB_WEBHOOK_SECRET`) live in **Secret Manager** and
+are mounted with `--set-secrets`. They are not GitHub secrets. The full list, naming scheme
+(`anchor-prod-*` / `anchor-staging-*`), and IAM grant are in
+[SETUP_GCLOUD.md → Runtime secrets](../SETUP_GCLOUD.md#runtime-secrets-come-from-secret-manager).
+Create them before the first deploy.
 
-Create every secret below. Missing secrets will cause the deploy to fail silently or at runtime.
+GitHub (**Settings → Secrets and variables → Actions**) needs only:
 
-| Secret | Description | Example / source |
-|---|---|---|
-| `GCP_PROJECT_ID` | GCP project ID | `my-anchor-prod` |
-| `GCP_REGION` | Deployment region | `us-central1` |
-| `GCP_SA_KEY` | Full JSON of the service account key | output of step 4 above |
-| `DATABASE_URL_PROD` | PostgreSQL connection string | `postgresql://anchor:pass@localhost/anchor_production?host=/cloudsql/...` |
-| `REDIS_URL_PROD` | Redis connection string | `redis://...` |
-| `RAILS_MASTER_KEY` | Contents of `config/master.key` | 32-char hex string |
-| `SECRET_KEY_BASE` | Rails secret key base | `bundle exec rails secret` |
-| `ENCRYPTION_KEY` | 32-byte AES-256 key for attr_encrypted | `ruby -e "puts SecureRandom.hex(16)"` |
-| `GH_CLIENT_ID` | GitHub OAuth app client ID | from step 7 above |
-| `GH_CLIENT_SECRET` | GitHub OAuth app client secret | from step 7 above |
-| `GOOGLE_CLIENT_ID` | Google OAuth app client ID | from GCP Console |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth app client secret | from GCP Console |
-| `GH_WEBHOOK_SECRET` | HMAC secret for webhook validation | `ruby -e "puts SecureRandom.hex(24)"` |
-| `OPENAI_API_KEY` | OpenAI API key (AI features) | from platform.openai.com |
+| Secret | Description |
+|---|---|
+| `GCP_PROJECT_ID` | GCP project ID |
+| `GCP_REGION` | Deployment region, e.g. `us-central1` |
+| `GCP_SA_KEY` | Full JSON of the deploy service account key (step 4 above) |
+| `GH_CLIENT_ID` | GitHub OAuth app client ID (step 7) |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 
-Generate `SECRET_KEY_BASE`:
+Generate values for the Secret Manager entries with:
 ```bash
-bundle exec rails secret
-```
-
-Generate `ENCRYPTION_KEY`:
-```bash
-ruby -e "require 'securerandom'; puts SecureRandom.hex(16)"
+bundle exec rails secret                                  # SECRET_KEY_BASE
+ruby -e "require 'securerandom'; puts SecureRandom.hex(32)"  # ENCRYPTION_KEY
 ```
 
 ---
@@ -307,13 +299,14 @@ gcloud run services update-traffic anchor-prod \
 ## First deploy checklist
 
 - [ ] GCP project created with billing enabled
-- [ ] All APIs enabled (`run`, `cloudbuild`, `artifactregistry`, `sqladmin`)
+- [ ] All APIs enabled (`run`, `cloudbuild`, `artifactregistry`, `sqladmin`, `secretmanager`)
 - [ ] Artifact Registry repository `anchor` created in the target region
 - [ ] Service account `github-actions` created with all 5 IAM roles
 - [ ] `gcp-sa-key.json` exported, copied to `GCP_SA_KEY` secret, local file deleted
 - [ ] Cloud SQL instance and database created
 - [ ] Redis provisioned (Redis Cloud or Memorystore)
-- [ ] All 14 GitHub Secrets created and verified
+- [ ] 5 GitHub Secrets created (`GCP_PROJECT_ID`, `GCP_REGION`, `GCP_SA_KEY`, `GH_CLIENT_ID`, `GOOGLE_CLIENT_ID`)
+- [ ] 9 Secret Manager secrets created and `roles/secretmanager.secretAccessor` granted to the runtime service account ([SETUP_GCLOUD.md](../SETUP_GCLOUD.md#runtime-secrets-come-from-secret-manager))
 - [ ] GitHub OAuth App created with production callback URL
 - [ ] Google OAuth App created with production callback URL
 - [ ] Push to `main` and confirm green pipeline in GitHub Actions
@@ -334,7 +327,7 @@ The Artifact Registry push succeeded but the region in `GCP_REGION` doesn't matc
 `RAILS_MASTER_KEY` is wrong or missing. The credentials file can't be decrypted. Verify the secret matches `config/master.key` locally.
 
 **Sidekiq worker not processing jobs**
-Check `REDIS_URL_PROD` — the worker and web service must connect to the same Redis instance. Tail the worker logs to confirm it's polling.
+Check the `<prefix>-redis-url` secret — the worker and web service must connect to the same Redis instance. Tail the worker logs to confirm it's polling.
 
 **Cold start latency**
-Set `--min-instances=1` on `anchor-prod` in `deploy-prod.yml` to keep one instance warm. This increases cost slightly but eliminates cold starts.
+Set `--min-instances=1` on `anchor-prod` in `deploy-prod.yml` to keep one web instance warm. It costs more but removes cold starts. Keep the **worker** at `--min-instances=1` in any case: a worker scaled to zero never picks up queued deployments. That costs about $45–55 per month per environment (see [SETUP_GCLOUD.md](../SETUP_GCLOUD.md)).

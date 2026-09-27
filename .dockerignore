@@ -49,3 +49,10 @@
 # Ignore Docker-related files
 /.dockerignore
 /Dockerfile*
+
+# Ignore test suites, coverage and local agent/editor state — not needed at runtime.
+/spec
+/test
+/coverage
+/.claude
+/.rspec

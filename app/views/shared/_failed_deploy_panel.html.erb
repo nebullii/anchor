@@ -1,0 +1,56 @@
+<%# locals: (deployment:, show_project: false) %>
+<%#
+  Everything a user needs to recover from a failed deploy, in one place:
+  the failure category, the rule-based fix hint, the AI explanation (when
+  available), the raw error, and a one-click Retry.
+  Rendered on the dashboard; the deployment page can render it too.
+%>
+<% category    = deployment.error_category.presence || Deployments::ErrorCategorizer.categorize(deployment.error_message) %>
+<% hint        = Deployments::ErrorCategorizer.user_hint(category) %>
+<% explanation = deployment.try(:ai_error_explanation).presence || deployment.try(:ai_explanation).presence %>
+<% missing_key = category == "missing_env_var" ? Deployments::ErrorCategorizer.extract_missing_env_var(deployment.error_message) : nil %>
+
+<div id="failed_deploy_<%= deployment.id %>" class="mb-6 p-4 rounded-xl bg-red-950/50 border border-red-800/50" data-testid="failed-deploy-panel">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <p class="text-xs text-red-500 font-semibold uppercase tracking-wide">
+      Deployment failed<% if show_project %> · <%= deployment.project.name %><% end %>
+    </p>
+    <span class="text-[11px] font-mono text-red-300 bg-red-900/40 border border-red-800/60 rounded-full px-2 py-0.5" data-testid="error-category">
+      <%= category.to_s.humanize %>
+    </span>
+  </div>
+
+  <p class="text-sm text-red-200 mb-1"><span class="font-semibold">How to fix:</span> <%= hint %></p>
+
+  <% if explanation %>
+    <div class="mt-3 pt-3 border-t border-red-800/40">
+      <p class="text-xs text-red-400 font-semibold uppercase tracking-wide mb-1">What went wrong (AI)</p>
+      <p class="text-sm text-red-200/80 leading-relaxed"><%= explanation %></p>
+    </div>
+  <% elsif deployment.finished_at.nil? || deployment.finished_at > 2.minutes.ago %>
+    <p class="mt-3 pt-3 border-t border-red-800/40 text-xs text-red-600 animate-pulse">Generating an AI explanation…</p>
+  <% else %>
+    <p class="mt-3 pt-3 border-t border-red-800/40 text-xs text-red-600">
+      No AI explanation for this failure. Add an AI API key to <code class="font-mono">.env</code> to get one next time.
+    </p>
+  <% end %>
+
+  <% if deployment.error_message.present? %>
+    <details class="mt-3">
+      <summary class="text-xs text-red-400 cursor-pointer hover:text-red-300">Raw error</summary>
+      <pre class="mt-2 text-xs text-red-300 whitespace-pre-wrap font-mono leading-relaxed"><%= deployment.error_message.truncate(2000) %></pre>
+    </details>
+  <% end %>
+
+  <div class="mt-4 pt-4 border-t border-red-800/40 flex flex-wrap items-center gap-2">
+    <%= button_to "Retry", deploy_project_path(deployment.project), method: :post,
+          class: "inline-flex items-center text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded",
+          data: { testid: "retry-deploy" } %>
+    <% if missing_key.present? %>
+      <%= link_to "Add #{missing_key}", project_secrets_path(deployment.project, prefill_key: missing_key),
+            class: "inline-flex items-center text-xs text-red-100 bg-red-800/60 hover:bg-red-700/70 px-3 py-1.5 rounded border border-red-700" %>
+    <% end %>
+    <%= link_to "View logs", project_deployment_path(deployment.project, deployment),
+          class: "inline-flex items-center text-xs text-red-300 hover:text-red-100 px-3 py-1.5" %>
+  </div>
+</div>

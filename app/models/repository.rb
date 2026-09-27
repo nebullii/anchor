@@ -56,8 +56,11 @@ class Repository < ApplicationRecord
     last_synced_at.nil? || last_synced_at < 1.hour.ago
   end
 
-  # Authenticated clone URL with the user's GitHub token embedded.
+  # Authenticated clone URL with the user's GitHub token embedded. Falls back
+  # to the plain URL (public repos) when the user has no token.
   def authenticated_clone_url
+    return clone_url if user.github_token.blank?
+
     uri = URI.parse(clone_url)
     uri.user     = user.github_login
     uri.password = user.github_token

@@ -15,6 +15,8 @@ module ApplicationHelper
     when "cloning",  "detecting"         then "bg-blue-500/10 text-blue-400 ring-blue-500/20"
     when "queued", "pending", "analyzing" then "bg-gray-500/10 text-gray-400 ring-gray-500/20"
     when "cancelled"                     then "bg-gray-500/10 text-gray-500 ring-gray-500/20"
+    when "rolled_back"                   then "bg-amber-500/10 text-amber-400 ring-amber-500/20"
+    when "superseded"                    then "bg-gray-500/10 text-gray-400 ring-gray-500/20"
     when "active"                        then "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
     when "error"                         then "bg-red-500/10 text-red-400 ring-red-500/20"
     else                                      "bg-gray-500/10 text-gray-400 ring-gray-500/20"
@@ -47,5 +49,11 @@ module ApplicationHelper
     when "docker"  then "&#x1F433;"   # whale
     else                "&#x1F4E6;"   # package
     end
+  end
+
+  # Where a project runs: the Cloud Run region, or "Local Docker" for the
+  # local provider (which has no region).
+  def deploy_location(project)
+    project.try(:local_docker?) ? "Local Docker" : project.gcp_region
   end
 end

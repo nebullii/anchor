@@ -1,0 +1,38 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    actionpack (8.0.2)
+      rack (>= 2.2.4)
+    bootsnap (1.18.4)
+      msgpack (~> 1.2)
+    debug (1.10.0)
+    msgpack (1.7.5)
+    pg (1.5.9)
+    propshaft (1.1.0)
+    puma (6.5.0)
+      nio4r (~> 2.0)
+    nio4r (2.7.4)
+    rack (3.1.8)
+    rails (8.0.2)
+      actionpack (= 8.0.2)
+      railties (= 8.0.2)
+    railties (8.0.2)
+      actionpack (= 8.0.2)
+
+PLATFORMS
+  aarch64-linux
+  x86_64-linux
+
+DEPENDENCIES
+  bootsnap
+  debug
+  pg (~> 1.1)
+  propshaft
+  puma (>= 5.0)
+  rails (~> 8.0.2)
+
+RUBY VERSION
+   ruby 3.3.6p108
+
+BUNDLED WITH
+   2.5.22

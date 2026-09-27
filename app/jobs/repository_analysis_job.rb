@@ -14,7 +14,7 @@ class RepositoryAnalysisJob < ApplicationJob
     clone_repo(repository, project, repo_path)
 
     result      = RepositoryAnalyzer.new(repo_path, project).call
-    enriched    = enrich_with_ai(result.to_h, repo_path)
+    enriched    = enrich_with_ai(result.to_h, repo_path, project)
 
     project.update_columns(
       analysis_status: "complete",
@@ -43,16 +43,25 @@ class RepositoryAnalysisJob < ApplicationJob
     )
   end
 
-  def enrich_with_ai(analysis_hash, repo_path)
+  # AI enrichment is best-effort: deterministic results are always kept and
+  # win on conflict (see Ai::RepositoryAnalyzer). Project secret values are
+  # passed so they are redacted from anything sent to the provider.
+  def enrich_with_ai(analysis_hash, repo_path, project = nil)
     file_tree = Dir.glob("#{repo_path}/**/*", File::FNM_DOTMATCH)
                    .reject { |f| File.directory?(f) }
                    .map    { |f| f.sub("#{repo_path}/", "") }
                    .reject { |f| f.start_with?(".git/", "node_modules/", "vendor/") }
 
     readme_path = Dir.glob("#{repo_path}/README{,.md,.txt}", File::FNM_CASEFOLD).first
-    readme      = File.read(readme_path) if readme_path && File.exist?(readme_path)
+    # Cap the read: a multi-MB README must not be loaded just to send 4 KB.
+    readme      = File.read(readme_path, 64_000) if readme_path && File.file?(readme_path)
 
-    Ai::RepositoryAnalyzer.new(analysis_hash, file_tree: file_tree, readme: readme).call
+    Ai::RepositoryAnalyzer.new(
+      analysis_hash,
+      file_tree: file_tree,
+      readme:    readme,
+      secrets:   project ? Ai::Redaction.secret_values_for(project) : []
+    ).call
   rescue => e
     Rails.logger.warn("RepositoryAnalysisJob AI enrichment failed: #{e.message}")
     analysis_hash

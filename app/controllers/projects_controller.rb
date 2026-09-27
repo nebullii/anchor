@@ -62,128 +62,19 @@ class ProjectsController < ApplicationController
   end
 
   def deploy
-    if @project.has_active_deployment?
-      respond_to do |format|
-        format.turbo_stream do
-          render turbo_stream: turbo_stream.replace(
-            "notices",
-            partial: "shared/notice",
-            locals:  { message: "A deployment is already in progress.", alert: true }
-          )
-        end
-        format.html { redirect_to @project, alert: "A deployment is already in progress." }
-      end
-      return
-    end
-
-    unless current_user.within_deploy_quota?
-      respond_to do |format|
-        format.turbo_stream do
-          render turbo_stream: turbo_stream.replace(
-            "notices",
-            partial: "shared/notice",
-            locals:  { message: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow.", alert: true }
-          )
-        end
-        format.html do
-          redirect_to @project,
-                      alert: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow."
-        end
-      end
-      return
-    end
-
-    missing = @project.missing_required_secrets
-    if missing.any?
-      respond_to do |format|
-        format.turbo_stream do
-          render turbo_stream: turbo_stream.replace(
-            "missing_secrets_modal",
-            partial: "projects/missing_secrets_modal",
-            locals:  { project: @project, missing_keys: missing }
-          )
-        end
-        format.html do
-          redirect_to project_secrets_path(@project),
-                      alert: "Missing required secrets: #{missing.join(', ')}. Add them before deploying."
-        end
-      end
-      return
-    end
-
-    @deployment = @project.deployments.create!(
-      status:       "queued",
-      triggered_by: "manual",
-      branch:       @project.production_branch
-    )
-    current_user.increment_deploy_quota!
-    DeploymentJob.perform_later(@deployment.id)
-
-    respond_to do |format|
-      format.turbo_stream do
-        render turbo_stream: [
-          turbo_stream.prepend(
-            "project_#{@project.id}_deployment_list",
-            partial: "deployments/row",
-            locals:  { deployment: @deployment, show_project: false }
-          ),
-          turbo_stream.replace(
-            "notices",
-            partial: "shared/notice",
-            locals:  { message: "Deployment queued." }
-          )
-        ]
-      end
-      format.html do
-        redirect_to project_deployment_path(@project, @deployment),
-                    notice: "Deployment started."
-      end
-    end
+    start_deployment(Deployments::Starter.new(project: @project, user: current_user),
+                     started_message: "Deployment started.")
   end
 
   def redeploy
-    if @project.has_active_deployment?
-      redirect_to @project, alert: "A deployment is already in progress." and return
-    end
-
-    unless current_user.within_deploy_quota?
-      redirect_to @project,
-                  alert: "Daily deployment quota reached (#{User::DAILY_DEPLOY_LIMIT}/day). Try again tomorrow." and return
-    end
-
     last = @project.last_successful_deployment
-
-    @deployment = @project.deployments.create!(
-      status:         "queued",
-      triggered_by:   "manual",
-      branch:         last&.branch || @project.production_branch,
-      commit_sha:     last&.commit_sha,
-      commit_message: last&.commit_message,
-      commit_author:  last&.commit_author
+    starter = Deployments::Starter.new(
+      project:    @project,
+      user:       current_user,
+      branch:     last&.branch,
+      attributes: last&.slice(:commit_sha, :commit_message, :commit_author) || {}
     )
-    current_user.increment_deploy_quota!
-    DeploymentJob.perform_later(@deployment.id)
-
-    respond_to do |format|
-      format.turbo_stream do
-        render turbo_stream: [
-          turbo_stream.prepend(
-            "project_#{@project.id}_deployment_list",
-            partial: "deployments/row",
-            locals:  { deployment: @deployment, show_project: false }
-          ),
-          turbo_stream.replace(
-            "notices",
-            partial: "shared/notice",
-            locals:  { message: "Redeployment queued." }
-          )
-        ]
-      end
-      format.html do
-        redirect_to project_deployment_path(@project, @deployment),
-                    notice: "Redeployment started."
-      end
-    end
+    start_deployment(starter, started_message: "Redeployment started.")
   end
 
   def dockerfile_preview
@@ -244,6 +135,14 @@ class ProjectsController < ApplicationController
                          alert: "No files ready to commit. Please generate first."
     end
 
+    # AI output is untrusted (repo content feeds the prompt): only commit the
+    # CI/CD files the feature is meant to write, with no dangerous constructs.
+    violations = Security::GeneratedFilePolicy.violations(@project.cicd_files)
+    if violations.any?
+      return redirect_to setup_cicd_project_path(@project),
+                         alert: "Generated files were rejected: #{violations.first(3).join('; ')}"
+    end
+
     files_to_commit = @project.cicd_files.map do |f|
       {
         path:    f["path"],
@@ -273,6 +172,42 @@ class ProjectsController < ApplicationController
   end
 
   private
+
+  # Runs a Deployments::Starter. On success, opens the new deployment's live
+  # view. On failure, shows why: the missing-secrets modal on the project page
+  # (the only page that has it), otherwise a notice.
+  def start_deployment(starter, started_message:)
+    result = starter.call
+
+    if result.success?
+      return redirect_to project_deployment_path(@project, result.deployment),
+                         notice: started_message, status: :see_other
+    end
+
+    modal = result.error_code == :missing_secrets &&
+            request.referer.to_s.end_with?(project_path(@project))
+    respond_to do |format|
+      format.turbo_stream do
+        if modal
+          render turbo_stream: turbo_stream.replace(
+            "missing_secrets_modal",
+            partial: "projects/missing_secrets_modal",
+            locals:  { project: @project, missing_keys: result.missing_secrets }
+          )
+        else
+          render turbo_stream: turbo_stream.replace(
+            "notices",
+            partial: "shared/notice",
+            locals:  { message: result.message, alert: true }
+          )
+        end
+      end
+      format.html do
+        target = result.error_code == :missing_secrets ? project_secrets_path(@project) : @project
+        redirect_to target, alert: result.message
+      end
+    end
+  end
 
   def set_project
     @project = current_user.projects.find(params[:id])
