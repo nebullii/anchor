@@ -23,6 +23,8 @@
       <p class="text-sm text-gray-400 italic px-1"><%= result["app_description"] %></p>
     <% end %>
 
+    <%= render "projects/preflight_findings", result: result %>
+
     <%# ── Detected Stack ──────────────────────────────────────────── %>
     <% ai_confidence = result["ai_confidence"] || result["confidence"] %>
     <div class="rounded-xl border border-gray-800 p-4">
@@ -30,6 +32,8 @@
         <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Detected Stack</h3>
         <% if ai_confidence == "low" %>
           <span class="text-xs text-amber-400">low confidence</span>
+        <% elsif ai_confidence == "medium" %>
+          <span class="text-xs text-gray-400">medium confidence</span>
         <% elsif ai_confidence == "high" %>
           <span class="text-xs text-emerald-600">high confidence</span>
         <% end %>

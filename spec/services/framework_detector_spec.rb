@@ -85,7 +85,7 @@ RSpec.describe FrameworkDetector do
       result = subject.call
       expect(result.framework).to eq("fastapi")
       expect(result.port).to eq(8000)
-      expect(result.runtime).to eq("python3.11")
+      expect(result.runtime).to eq("python3.12") # default line when unpinned
     end
 
     it "detects fastapi from pyproject.toml when requirements.txt absent" do
@@ -173,7 +173,7 @@ RSpec.describe FrameworkDetector do
       result = subject.call
       expect(result.framework).to eq("go")
       expect(result.port).to eq(8080)
-      expect(result.runtime).to eq("go1.22")
+      expect(result.runtime).to eq("go1.21") # from the go directive
     end
 
     it "reads go version from go.mod" do
@@ -266,7 +266,7 @@ RSpec.describe FrameworkDetector do
       subject.call
       project.reload
       expect(project.framework).to eq("fastapi")
-      expect(project.runtime).to eq("python3.11")
+      expect(project.runtime).to eq("python3.12")
       expect(project.port).to eq(8000)
     end
 
@@ -277,6 +277,155 @@ RSpec.describe FrameworkDetector do
       result = subject.call
       expect(result).to be_a(FrameworkDetector::Result)
       expect(result).to respond_to(:framework, :runtime, :port, :metadata)
+    end
+
+    # ── Confidence and evidence ──────────────────────────────────── #
+
+    it "carries confidence and file:line evidence" do
+      write("Gemfile", %(source "https://rubygems.org"\ngem "rails", "~> 8.0"\n))
+      result = subject.call
+
+      expect(result.confidence).to be_between(0.5, 1.0)
+      expect(result.evidence).to include(a_hash_including("file" => "Gemfile", "line" => 2))
+    end
+
+    it "is less confident about a fallback than a real detection" do
+      static   = described_class.new(repo_path, project).call
+      write("go.mod", "module x\n\ngo 1.25\n")
+      write("main.go", "package main\n\nfunc main() {}\n")
+      go = described_class.new(repo_path, project).call
+
+      expect(go.confidence).to be > static.confidence
+    end
+
+    it "does not mistake rails-adjacent gems for Rails" do
+      write("Gemfile", %(gem "sprockets-rails"\ngem "sinatra"\n))
+      expect(subject.call.framework).not_to eq("rails")
+    end
+
+    it "prefers the lockfile's Rails even when the Gemfile only lists railties" do
+      write("Gemfile", %(gem "railties"\n))
+      expect(subject.call.framework).to eq("rails")
+    end
+
+    # ── Version detection ─────────────────────────────────────────── #
+
+    it "reads the ruby version from Gemfile.lock when there is no .ruby-version" do
+      write("Gemfile", %(gem "rails"\n))
+      write("Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.2.1)\n\nRUBY VERSION\n   ruby 3.2.4p170\n")
+      result = subject.call
+      expect(result.metadata).to include("ruby_version" => "3.2.4", "rails_version" => "7.2.1")
+      expect(result.runtime).to eq("ruby3.2")
+    end
+
+    it "resolves engines.node to a concrete Node line" do
+      write("package.json", JSON.generate("engines" => { "node" => ">=18 <21" }, "scripts" => { "start" => "node i.js" }))
+      expect(subject.call.metadata["node_version"]).to eq("20")
+    end
+
+    it "reads requires-python from pyproject.toml" do
+      write("pyproject.toml", %([project]\nname = "x"\nrequires-python = ">=3.13"\ndependencies = ["flask>=3"]\n))
+      result = subject.call
+      expect(result.framework).to eq("flask")
+      expect(result.runtime).to eq("python3.13")
+    end
+
+    it "uses the go.mod toolchain when newer than the go directive" do
+      write("go.mod", "module x\n\ngo 1.22\n\ntoolchain go1.24.2\n")
+      expect(subject.call.metadata["go_version"]).to eq("1.24")
+    end
+
+    # ── Package managers ─────────────────────────────────────────── #
+
+    it "detects pnpm, yarn and npm from lockfiles" do
+      write("package.json", JSON.generate("scripts" => { "start" => "node i.js" }))
+      touch("pnpm-lock.yaml")
+      expect(subject.call.metadata).to include("package_manager" => "pnpm", "lockfile" => "pnpm-lock.yaml")
+    end
+
+    it "honours packageManager over lockfiles" do
+      write("package.json", JSON.generate("packageManager" => "yarn@4.5.0", "scripts" => { "start" => "x" }))
+      touch("yarn.lock")
+      expect(subject.call.metadata).to include("package_manager" => "yarn", "yarn_berry" => true)
+    end
+
+    it "detects Vite SPAs as static builds" do
+      write("package.json", JSON.generate("scripts" => { "build" => "vite build", "preview" => "vite preview" }, "devDependencies" => { "vite" => "^6" }))
+      result = subject.call
+      expect(result.framework).to eq("static")
+      expect(result.metadata).to include("build_tool" => "vite", "output_dir" => "dist")
+    end
+
+    it "detects Remix and Nuxt as node apps with a framework detail" do
+      write("package.json", JSON.generate("dependencies" => { "@remix-run/node" => "^2", "@remix-run/serve" => "^2" }, "scripts" => { "start" => "remix-serve build" }))
+      expect(subject.call.metadata["node_framework"]).to eq("remix")
+    end
+
+    # ── Malformed input ──────────────────────────────────────────── #
+
+    it "survives malformed manifests and reports them" do
+      write("package.json", "{ not json")
+      result = subject.call
+      expect(result.framework).to eq("node")
+      expect(result.confidence).to be < 0.5
+      expect(result.errors).to include(a_hash_including("file" => "package.json"))
+    end
+
+    it "survives a malformed go.mod" do
+      write("go.mod", "this is not a go.mod")
+      expect { subject.call }.not_to raise_error
+      expect(subject.call.errors).to include(a_hash_including("file" => "go.mod"))
+    end
+
+    it "never raises, even if a probe blows up" do
+      touch("index.html")
+      allow_any_instance_of(Analysis::AppLocator).to receive(:call).and_raise("kaboom")
+      result = subject.call
+      expect(result.framework).to eq("static")
+      expect(result.errors.first["message"]).to include("kaboom")
+    end
+
+    # ── Monorepos ────────────────────────────────────────────────── #
+
+    it "picks an app inside a monorepo and reports the candidates" do
+      write("package.json", JSON.generate("private" => true, "workspaces" => [ "apps/*" ]))
+      FileUtils.mkdir_p(File.join(repo_path, "apps/web"))
+      FileUtils.mkdir_p(File.join(repo_path, "apps/worker"))
+      write("apps/web/package.json", JSON.generate("dependencies" => { "next" => "15" }, "scripts" => { "build" => "next build" }))
+      write("apps/worker/go.mod", "module w\n\ngo 1.25\n")
+
+      result = subject.call
+      expect(result.framework).to eq("nextjs")
+      expect(result.root_dir).to eq("apps/web")
+      expect(result.metadata["root_dir"]).to eq("apps/web")
+      expect(result.candidates.map { |c| c["root_dir"] }).to contain_exactly("apps/web", "apps/worker")
+    end
+
+    it "finds apps in plain backend/frontend folders" do
+      FileUtils.mkdir_p(File.join(repo_path, "backend"))
+      write("backend/requirements.txt", "fastapi\nuvicorn\n")
+      result = subject.call
+      expect(result.framework).to eq("fastapi")
+      expect(result.root_dir).to eq("backend")
+    end
+
+    it "uses the project's root_dir when the schema has one" do
+      FileUtils.mkdir_p(File.join(repo_path, "svc"))
+      write("svc/go.mod", "module s\n\ngo 1.25\n")
+      touch("index.html")
+      # Stand-in until the projects table gains a root_dir column.
+      with_root = Struct.new(:root_dir) { def update_columns(**) = true }.new("svc")
+
+      expect(described_class.new(repo_path, with_root).call.framework).to eq("go")
+    end
+
+    it "keeps a root Dockerfile authoritative in a monorepo" do
+      touch("Dockerfile")
+      write("package.json", JSON.generate("workspaces" => [ "apps/*" ]))
+      FileUtils.mkdir_p(File.join(repo_path, "apps/web"))
+      write("apps/web/package.json", JSON.generate("dependencies" => { "next" => "15" }))
+
+      expect(subject.call.framework).to eq("docker")
     end
   end
 end

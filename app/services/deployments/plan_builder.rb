@@ -1,6 +1,7 @@
 module Deployments
   class PlanBuilder
-    TARGET = "Google Cloud Run".freeze
+    TARGETS = { "local_docker" => "Local Docker" }.freeze
+    DEFAULT_TARGET = "Google Cloud Run".freeze
 
     def initialize(project:, analysis_result:, user:)
       @project = project
@@ -24,7 +25,7 @@ module Deployments
         "runtime"                   => runtime,
         "port"                      => port,
         "container"                 => @analysis_result["has_dockerfile"] ? "Repository Dockerfile" : "Generated Dockerfile",
-        "target"                    => TARGET,
+        "target"                    => TARGETS.fetch(@project.try(:provider).to_s, DEFAULT_TARGET),
         "required_env_vars"         => required_keys,
         "optional_env_vars"         => optional_keys,
         "missing_required_env_vars" => missing_required,

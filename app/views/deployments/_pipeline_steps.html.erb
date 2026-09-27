@@ -9,19 +9,40 @@
     { key: "running",      label: "Running",            icon: "6" },
   ]
 
-  order = %w[queued pending analyzing cloning detecting building deploying health_check running success failed cancelled]
-  current_index = order.index(deployment.status) || 0
+  # Map every status onto the step it belongs to.
+  step_keys = steps.map { |st| st[:key] }
+  normalize = lambda do |status|
+    case status.to_s
+    when "pending"                                  then "queued"
+    when "cloning", "detecting"                     then "analyzing"
+    when "success", "superseded", "rolled_back"     then "running"
+    else status.to_s
+    end
+  end
 
-  def step_state(step_key, deployment, order, current_index)
-    step_index = order.index(step_key) || 0
-    if deployment.status == "failed" || deployment.status == "cancelled"
-      step_index < current_index ? :done : :skipped
-    elsif step_index < current_index
-      :done
-    elsif step_index == current_index
-      :active
+  # For a failed or cancelled deploy, the step it stopped on is where the
+  # last transition came from; later steps never ran.
+  aborted = %w[failed cancelled].include?(deployment.status)
+  stopped_on =
+    if aborted
+      last = deployment.deployment_events.where(to_status: deployment.status).order(:occurred_at).last
+      normalize.call(last&.from_status)
     else
-      :pending
+      normalize.call(deployment.status)
+    end
+  current_index = step_keys.index(stopped_on) || 0
+
+  step_state = lambda do |step_key|
+    step_index = step_keys.index(step_key)
+    if aborted
+      if step_index < current_index    then :done
+      elsif step_index == current_index then :skipped
+      else                                   :pending
+      end
+    elsif stopped_on == "running"      then :done
+    elsif step_index < current_index   then :done
+    elsif step_index == current_index  then :active
+    else                                    :pending
     end
   end
 %>
@@ -29,7 +50,7 @@
 <div id="deployment_pipeline" class="mb-6">
   <div class="flex items-center gap-0">
     <% steps.each_with_index do |step, i| %>
-      <% state = step_state(step[:key], deployment, order, current_index) %>
+      <% state = step_state.call(step[:key]) %>
 
       <%# Step node %>
       <div class="flex flex-col items-center flex-shrink-0">
@@ -70,7 +91,7 @@
 
       <%# Connector line (not after last step) %>
       <% if i < steps.length - 1 %>
-        <% line_done = order.index(steps[i + 1][:key]) <= current_index && !%w[failed cancelled].include?(deployment.status) %>
+        <% line_done = step_state.call(steps[i + 1][:key]) == :done %>
         <div class="flex-1 h-0.5 mb-5 <%= line_done ? 'bg-emerald-700' : 'bg-gray-800' %>"></div>
       <% end %>
     <% end %>

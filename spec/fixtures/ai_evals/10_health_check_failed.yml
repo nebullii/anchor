@@ -1,0 +1,23 @@
+id: health_check_404
+description: The configured health check path does not exist; the app returns 404 so the rollout is rejected.
+framework: express
+error_message: "Health check failed: GET /healthz returned 404 after 5 attempts"
+logs: |
+  Server listening on 0.0.0.0:8080
+  Revision shop-api-00009-qad deployed (no traffic)
+  Health check 1/5: GET https://shop-api-00009-qad---shop-api-uc.a.run.app/healthz -> 404
+  Health check 2/5: GET https://shop-api-00009-qad---shop-api-uc.a.run.app/healthz -> 404
+  Health check 5/5: GET https://shop-api-00009-qad---shop-api-uc.a.run.app/healthz -> 404
+  GET /healthz 404 1.2 ms - 145
+  Health check failed; traffic not shifted. Previous revision shop-api-00008-bex keeps serving.
+expect:
+  category: [health_check_failed]
+  mentions_any: [/healthz, health check path, health_check_path]
+reference:
+  summary: The new revision failed its health check because /healthz returns 404.
+  likely_cause: The app has no /healthz route, but the project's health check path is set to /healthz.
+  fix_steps:
+    - Add a GET /healthz route that returns 200, or change the project's health check path to an existing route such as /
+    - Redeploy
+  confidence: high
+  category: health_check_failed

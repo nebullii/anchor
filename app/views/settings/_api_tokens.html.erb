@@ -1,0 +1,58 @@
+<%# ── API tokens (CLI + MCP) ─────────────────────────────────────────── %>
+<div id="api_tokens" class="rounded-xl border border-gray-800 overflow-hidden mt-8">
+  <div class="px-6 py-4 border-b border-gray-800">
+    <h2 class="text-sm font-semibold text-white">API tokens</h2>
+    <p class="text-xs text-gray-500 mt-0.5">
+      For the <code class="text-gray-400">anchor</code> CLI and coding agents. Tokens act as you — treat them like passwords.
+    </p>
+  </div>
+
+  <div class="px-6 py-5 space-y-5">
+    <% if new_api_token %>
+      <div class="p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/40" data-testid="new-api-token">
+        <p class="text-xs font-semibold text-emerald-400 mb-2">
+          New token “<%= new_api_token.name %>” — copy it now, it won't be shown again.
+        </p>
+        <input type="text" readonly value="<%= new_api_token.plaintext_token %>"
+               onclick="this.select()"
+               class="w-full rounded-lg bg-gray-900 border border-gray-700 text-gray-100 font-mono text-xs px-3 py-2" />
+        <p class="text-xs text-gray-500 mt-2">
+          Then run <code class="text-gray-400">anchor login</code> and paste it.
+        </p>
+      </div>
+    <% end %>
+
+    <% if api_tokens.any? %>
+      <ul class="divide-y divide-gray-800 border border-gray-800 rounded-lg">
+        <% api_tokens.each do |token| %>
+          <li class="flex items-center justify-between px-3 py-2.5">
+            <div class="min-w-0">
+              <p class="text-xs text-gray-200 truncate"><%= token.name %></p>
+              <p class="text-xs text-gray-500 mt-0.5">
+                Created <%= time_ago_in_words(token.created_at) %> ago ·
+                <%= token.last_used_at ? "last used #{time_ago_in_words(token.last_used_at)} ago" : "never used" %>
+              </p>
+            </div>
+            <%= button_to "Revoke", settings_api_token_path(token), method: :delete,
+                  form: { data: { turbo_confirm: "Revoke “#{token.name}”? Anything using it will stop working." } },
+                  class: "text-xs text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-800 px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-shrink-0" %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="text-xs text-gray-500">No active tokens.</p>
+    <% end %>
+
+    <%= form_with url: settings_api_tokens_path, method: :post, data: { turbo: false } do |f| %>
+      <div class="flex items-end gap-3">
+        <div class="flex-1">
+          <%= f.label :name, "Token name", class: "block text-xs font-medium text-gray-400 mb-1" %>
+          <%= f.text_field :name, placeholder: "e.g. laptop CLI", maxlength: 100,
+                class: "w-full rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-xs px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-gray-500" %>
+        </div>
+        <%= f.submit "Create token",
+              class: "text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-colors cursor-pointer" %>
+      </div>
+    <% end %>
+  </div>
+</div>

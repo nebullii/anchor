@@ -30,7 +30,9 @@ export default class extends Controller {
     }
 
     this.element.dataset.submitting = "true"
-    this._setLoading(true)
+    // Defer the loading state: disabling the submit button inside its own
+    // click handler cancels the form submission, so nothing would be sent.
+    setTimeout(() => this._setLoading(true), 0)
 
     // Re-enable after 10s as a fallback (Turbo redirect will navigate away anyway).
     setTimeout(() => this._setLoading(false), 10_000)

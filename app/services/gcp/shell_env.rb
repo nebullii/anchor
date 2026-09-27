@@ -23,5 +23,16 @@ module Gcp
         "CLOUDSDK_CORE_DISABLE_PROMPTS" => "1"
       }
     end
+
+    # Yields the gcloud environment for a user, preferring OAuth (refreshing
+    # the access token only when it is about to expire) and falling back to a
+    # service account key written to a short-lived temp file.
+    def self.for_user(user)
+      if user.google_oauth_connected?
+        yield with_token(user.fresh_google_access_token)
+      else
+        user.with_gcp_credentials_file { |key_path| yield with_key(key_path) }
+      end
+    end
   end
 end

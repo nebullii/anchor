@@ -1,11 +1,28 @@
 name: CI
 
+# Every check a PR must pass. Nothing here touches a cloud account:
+# deploys live in deploy-staging.yml / deploy-prod.yml, which only run on
+# pushes to staging / main (the `deploy-workflows-guard` job enforces that).
+
 on:
   pull_request:
     branches: [main, staging]
+  push:
+    branches: [main, staging]
+  # deploy-prod.yml / deploy-staging.yml run this exact workflow as their gate.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# github.workflow is the caller's name when this runs via workflow_call, so the
+# deploy pipeline's CI run never cancels (or is cancelled by) the push run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  rspec:
     name: RSpec
     runs-on: ubuntu-latest
 
@@ -34,6 +51,7 @@ jobs:
 
     env:
       RAILS_ENV: test
+      CI: "true"
       DATABASE_URL: postgresql://anchor:anchor@localhost/anchor_test
       REDIS_URL: redis://localhost:6379/0
       ENCRYPTION_KEY: "00000000000000000000000000000000"
@@ -48,15 +66,31 @@ jobs:
           bundler-cache: true
 
       - name: Set up database
-        run: bundle exec rails db:schema:load
+        run: bin/rails db:schema:load
 
-      - name: Run tests
+      - name: Build CSS (views reference the Tailwind build)
+        run: bin/rails tailwindcss:build
+
+      - name: Run specs
         run: bundle exec rspec --format progress
+
+      - name: Seeds load cleanly on a fresh database
+        run: bin/rails db:seed
+
+  lint:
+    name: RuboCop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: RuboCop
+        run: bundle exec rubocop --format github
 
   security:
     name: Security scan
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -64,10 +98,167 @@ jobs:
         with:
           bundler-cache: true
 
+      # Not bin/brakeman: it adds --ensure-latest, which fails CI whenever a
+      # newer Brakeman is released, regardless of the code under test.
       - name: Brakeman
-        run: bin/brakeman --no-pager -q -w3
+        run: bundle exec brakeman --no-pager -q -w3
 
       - name: Bundle audit
         run: |
           gem install bundler-audit --no-document
           bundle-audit check --update
+
+  setup-script:
+    name: bin/setup + compose config
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: runner
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: localhost
+      PGUSER: runner
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Install postgres + redis clients
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client redis-tools
+      - name: bin/setup is idempotent (run twice)
+        run: |
+          bin/setup --skip-server
+          bin/setup --skip-server
+      - name: docker-compose.yml is valid
+        run: docker compose config --quiet
+
+  # Deploy workflows hold cloud credentials. They must never run for pull
+  # requests (forks could exfiltrate secrets), so fail CI if one gains a
+  # pull_request / pull_request_target trigger.
+  deploy-workflows-guard:
+    name: Deploy workflows never run on PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check triggers
+        run: |
+          status=0
+          for f in .github/workflows/deploy-*.yml .github/workflows/_deploy.yml; do
+            [ -e "$f" ] || continue
+            if ruby -ryaml -e 'w = YAML.load_file(ARGV[0]); on = w["on"] || w[true]; keys = on.is_a?(Hash) ? on.keys : Array(on); exit(keys.map(&:to_s).any? { |k| k.start_with?("pull_request") } ? 1 : 0)' "$f"; then
+              echo "ok   $f"
+            else
+              echo "::error file=$f::deploy workflow must not trigger on pull_request"
+              status=1
+            fi
+          done
+          exit $status
+
+  # Migrations run before new code takes traffic (see _deploy.yml), so a
+  # migration that drops or renames something breaks the revision still
+  # serving. Flag those unless explicitly marked as the "contract" step.
+  migrations:
+    name: Migration safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+      - name: Check new migrations are backward compatible
+        run: ruby script/check_migrations.rb "origin/${{ github.base_ref || 'main' }}"
+
+  # The whole product, for real: web + Sidekiq + docker build/run + the CLI,
+  # through deploy, failed release, rollback, preflight, cancel and webhook.
+  # Uses the free Local Docker provider — no cloud account, no AI keys.
+  e2e:
+    name: End-to-end (local Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: anchor
+          POSTGRES_PASSWORD: anchor
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://anchor:anchor@localhost/anchor_e2e
+      REDIS_URL: redis://localhost:6379/9
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run end-to-end suite
+        run: script/e2e_local.sh
+
+  cli:
+    name: CLI tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+      - name: go vet
+        working-directory: cli
+        run: go vet ./...
+      - name: go test
+        working-directory: cli
+        run: go test -race ./...
+
+  mcp:
+    name: MCP server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: node --test (no dependencies to install)
+        working-directory: mcp
+        run: npm test

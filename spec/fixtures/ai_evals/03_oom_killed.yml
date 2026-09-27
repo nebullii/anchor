@@ -1,0 +1,24 @@
+id: oom_killed_django
+description: Django + pandas worker loads a large CSV at boot and exceeds the 512Mi memory limit.
+framework: django
+error_message: "Memory limit of 512 MiB exceeded with 538 MiB used. Consider increasing the memory limit."
+logs: |
+  [2026-09-20 10:14:02 +0000] [1] [INFO] Starting gunicorn 23.0.0
+  [2026-09-20 10:14:02 +0000] [1] [INFO] Listening at: http://0.0.0.0:8080 (1)
+  [2026-09-20 10:14:02 +0000] [7] [INFO] Booting worker with pid: 7
+  [2026-09-20 10:14:02 +0000] [8] [INFO] Booting worker with pid: 8
+  [2026-09-20 10:14:03 +0000] [9] [INFO] Booting worker with pid: 9
+  Loading reference data from data/products.csv (412 MB)...
+  Memory limit of 512 MiB exceeded with 538 MiB used. Consider increasing the memory limit, see https://cloud.google.com/run/docs/configuring/memory-limits
+  [2026-09-20 10:14:09 +0000] [1] [ERROR] Worker (pid:8) was sent SIGKILL! Perhaps out of memory?
+expect:
+  category: [oom_killed]
+  mentions_any: [memory, "512", workers]
+reference:
+  summary: The container was killed for using more than its 512 MiB memory limit.
+  likely_cause: Three gunicorn workers each load the 412 MB products.csv at boot.
+  fix_steps:
+    - Increase the service memory to 1Gi or 2Gi in project settings
+    - Reduce gunicorn workers (e.g. --workers 1) or load the CSV lazily / from a database
+  confidence: high
+  category: oom_killed

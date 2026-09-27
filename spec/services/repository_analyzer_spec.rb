@@ -202,5 +202,54 @@ RSpec.describe RepositoryAnalyzer do
         )
       end
     end
+
+    describe "preflight wiring" do
+      it "stores preflight findings in the result" do
+        write("package.json", %({"dependencies":{"express":"^4"}}))
+        write("app.js", %(require("express")().listen(4000, "127.0.0.1")))
+
+        result = analyzer.call
+        expect(result.preflight).to include(a_hash_including(id: "bind_localhost", severity: "error", file: "app.js"))
+        expect(result.to_h[:preflight]).to eq(result.preflight)
+      end
+
+      it "uses the project's secrets when checking required env vars" do
+        write("Gemfile", %(gem "rails"\n))
+        write("config/initializers/x.rb", %(ENV.fetch("PAYMENTS_TOKEN")\n))
+        create(:secret, project: project, key: "PAYMENTS_TOKEN", value: "x")
+
+        messages = analyzer.call.preflight.map { |f| f[:message] }
+        expect(messages.join).not_to include("PAYMENTS_TOKEN")
+      end
+
+      it "degrades to no findings if preflight crashes" do
+        touch("index.html")
+        allow_any_instance_of(Analysis::Preflight).to receive(:call).and_raise("boom")
+        expect(analyzer.call.preflight).to eq([])
+      end
+
+      it "exposes detection confidence, evidence, metadata and candidates" do
+        write("go.mod", "module x\n\ngo 1.25\n")
+        write("main.go", "package main\n\nfunc main() {}\n")
+        result = analyzer.call
+
+        expect(result.confidence_score).to be > 0.8
+        expect(result.evidence).not_to be_empty
+        expect(result.metadata).to include("go_version" => "1.25", "main_package" => ".")
+        expect(result.root_dir).to eq(".")
+        expect(result.candidates).to be_an(Array)
+      end
+
+      it "analyses the chosen app directory in a monorepo" do
+        FileUtils.mkdir_p(File.join(repo_path, "backend"))
+        write("backend/requirements.txt", "fastapi\npsycopg2-binary\n")
+        write("backend/main.py", %(import os\nkey = os.getenv("OPENAI_API_KEY")\n))
+
+        result = analyzer.call
+        expect(result.root_dir).to eq("backend")
+        expect(result.detected_database["adapter"]).to eq("postgresql")
+        expect(result.detected_env_vars.map { |v| v["key"] }).to include("OPENAI_API_KEY")
+      end
+    end
   end
 end

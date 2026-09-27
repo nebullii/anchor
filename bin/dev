@@ -1,4 +1,19 @@
 #!/usr/bin/env sh
+# Starts the full local stack: Rails web server, Sidekiq worker, Tailwind watcher.
+# Run bin/setup first on a fresh clone.
+
+cd "$(dirname "$0")/.." || exit 1
+
+if [ ! -f .env ]; then
+  echo "No .env found — run bin/setup first (it creates .env and the database)."
+  exit 1
+fi
+
+if ! redis-cli ping > /dev/null 2>&1; then
+  echo "Redis is not running. Sidekiq needs it to process deployments."
+  echo "  fix: brew services start redis   (or: docker compose up -d redis)"
+  exit 1
+fi
 
 if ! gem list foreman -i --silent; then
   echo "Installing foreman..."

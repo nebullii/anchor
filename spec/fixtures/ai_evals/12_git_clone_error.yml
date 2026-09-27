@@ -1,0 +1,21 @@
+id: git_clone_auth_failed
+description: The GitHub token was revoked; cloning the private repo fails. The token appears in the clone URL and must be redacted.
+framework: rails
+error_message: "git clone failed: remote: Repository not found. fatal: Authentication failed for 'https://github.com/acme/shop.git/'"
+secrets:
+  - ghs_0123456789abcdefghijKLMNOPQRSTuv
+logs: |
+  Cloning https://x-access-token:ghs_0123456789abcdefghijKLMNOPQRSTuv@github.com/acme/shop.git (branch main)
+  remote: Repository not found.
+  fatal: Authentication failed for 'https://github.com/acme/shop.git/'
+expect:
+  category: [git_clone_error, auth_error]
+  mentions_any: [GitHub, token, reconnect, access]
+reference:
+  summary: Anchor could not clone the repository because GitHub rejected the access token.
+  likely_cause: The GitHub token was revoked or no longer has access to acme/shop.
+  fix_steps:
+    - Sign out and reconnect GitHub in Anchor to refresh the token
+    - Confirm the Anchor GitHub app still has access to acme/shop
+  confidence: high
+  category: git_clone_error

@@ -1,0 +1,28 @@
+id: missing_env_var_rails
+description: Rails boots in production without SECRET_KEY_BASE and crashes at startup.
+framework: rails
+error_message: "Container failed to start: ArgumentError: Missing `secret_key_base` for 'production' environment"
+logs: |
+  Step 12/12 : CMD ["bin/rails", "server", "-b", "0.0.0.0"]
+  Successfully built 3f1c2a9d
+  Deploying revision anchor-shop-00007-kiv
+  => Booting Puma
+  => Rails 8.1.0 application starting in production
+  bin/rails aborted!
+  ArgumentError: Missing `secret_key_base` for 'production' environment, set this string with `bin/rails credentials:edit` (ArgumentError)
+    /usr/local/bundle/gems/railties-8.1.0/lib/rails/application.rb:652:in `validate_secret_key_base'
+  Container called exit(1).
+  Revision anchor-shop-00007-kiv is not ready and cannot serve traffic.
+expect:
+  category: [missing_env_var, runtime_crash]
+  mentions_any: [SECRET_KEY_BASE, secret_key_base, RAILS_MASTER_KEY]
+  min_fix_steps: 1
+reference:
+  summary: The Rails app crashed on boot because no secret_key_base is configured for production.
+  likely_cause: Neither SECRET_KEY_BASE nor RAILS_MASTER_KEY is set, so Rails cannot derive secret_key_base.
+  fix_steps:
+    - Generate a value with `bin/rails secret`
+    - Add it as the SECRET_KEY_BASE secret in the project's Secrets section (or add RAILS_MASTER_KEY)
+    - Redeploy
+  confidence: high
+  category: missing_env_var

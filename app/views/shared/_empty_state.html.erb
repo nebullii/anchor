@@ -1,0 +1,29 @@
+<%# locals: (title:, body: nil, steps: []) %>
+<%#
+  First-run / empty-state card that tells the user exactly what to do next.
+  Usage:
+    render layout: "shared/empty_state", locals: { title: "...", body: "...", steps: [...] } do
+      ...action buttons...
+    end
+%>
+<div class="surface-card border-dashed p-8 sm:p-10" data-testid="empty-state">
+  <h2 class="text-lg font-semibold text-[var(--anchor-text)] mb-1"><%= title %></h2>
+  <% if body.present? %>
+    <p class="text-sm text-[var(--anchor-muted)] mb-5 max-w-2xl"><%= body %></p>
+  <% end %>
+
+  <% if steps.any? %>
+    <ol class="space-y-2 mb-6 text-sm">
+      <% steps.each_with_index do |step, i| %>
+        <li class="flex gap-3">
+          <span class="flex-shrink-0 w-5 h-5 rounded-full border border-[var(--anchor-border)] text-[11px] font-mono flex items-center justify-center text-[var(--anchor-muted)]"><%= i + 1 %></span>
+          <span class="text-[var(--anchor-text)]"><%= step %></span>
+        </li>
+      <% end %>
+    </ol>
+  <% end %>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <%= yield %>
+  </div>
+</div>

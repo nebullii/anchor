@@ -1,0 +1,21 @@
+id: port_mismatch_express
+description: Express app hard-codes port 3000; Cloud Run expects the container to listen on $PORT (8080).
+framework: express
+error_message: "The user-provided container failed to start and listen on the port defined provided by the PORT=8080 environment variable."
+logs: |
+  > shop-api@1.0.0 start
+  > node server.js
+  Server listening on http://0.0.0.0:3000
+  Default STARTUP TCP probe failed 1 time consecutively for container "shop-api-1" on port 8080. The instance was not started.
+  Revision 'shop-api-00003-xoz' is not ready and cannot serve traffic. The user-provided container failed to start and listen on the port defined provided by the PORT=8080 environment variable.
+expect:
+  category: [port_mismatch]
+  mentions_any: [PORT, "8080", process.env.PORT]
+reference:
+  summary: The app listens on port 3000 but Cloud Run sends traffic to port 8080.
+  likely_cause: server.js hard-codes port 3000 instead of reading process.env.PORT.
+  fix_steps:
+    - "Change server.js to listen on process.env.PORT || 3000"
+    - Redeploy
+  confidence: high
+  category: port_mismatch

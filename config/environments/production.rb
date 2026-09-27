@@ -31,8 +31,22 @@ Rails.application.configure do
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   config.force_ssl = true
 
-  # Skip http-to-https redirect for the health check endpoint (Cloud Run probes).
-  config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
+  # Health probes (Cloud Run / load balancers) talk plain HTTP inside the
+  # platform: don't redirect them. HSTS for a year, including subdomains.
+  health_paths = %w[/up /healthz /readyz].freeze
+  config.ssl_options = {
+    redirect: { exclude: ->(request) { health_paths.include?(request.path) } },
+    hsts:     { expires: 1.year, subdomains: true }
+  }
+
+  # Session cookie: HTTPS-only, not readable from JS, not sent on cross-site
+  # subrequests (CSRF defence in depth). Same key as before so existing
+  # sessions survive the deploy.
+  config.session_store :cookie_store,
+                       key:       "_anchor_session",
+                       secure:    true,
+                       httponly:  true,
+                       same_site: :lax
 
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
@@ -76,12 +90,12 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [ :id ]
 
-  # Enable DNS rebinding protection and other `Host` header attacks.
-  # config.hosts = [
-  #   "example.com",     # Allow requests from example.com
-  #   /.*\.example\.com/ # Allow requests from subdomains like `www.example.com`
-  # ]
-  #
-  # Skip DNS rebinding protection for the default health check endpoint.
-  # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+  # DNS rebinding / Host header protection. Host-header poisoning matters
+  # here because OAuth callbacks and the webhook URL shown to users are built
+  # from request.base_url. Set APP_HOSTS="anchor.example.com,.example.com"
+  # (a leading dot allows subdomains). Probes are exempt.
+  if ENV["APP_HOSTS"].present?
+    config.hosts = ENV["APP_HOSTS"].split(",").map(&:strip).reject(&:empty?)
+    config.host_authorization = { exclude: ->(request) { health_paths.include?(request.path) } }
+  end
 end

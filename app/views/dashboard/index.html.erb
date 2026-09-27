@@ -29,6 +29,13 @@
         </svg>
         Sign in with GitHub — it's free
       <% end %>
+      <% if dev_login_enabled? %>
+        <%= link_to root_path(dev_login: 1), data: { turbo: false, testid: "dev-login" },
+              class: "inline-flex items-center gap-2 text-sm font-medium px-6 py-3 rounded-lg border border-[var(--anchor-border)] text-[var(--anchor-text)] hover:border-[var(--anchor-muted)] transition-colors" do %>
+          Continue as demo user
+          <span class="text-[10px] uppercase tracking-wide text-amber-400">dev only</span>
+        <% end %>
+      <% end %>
     </div>
   </section>
 
@@ -43,7 +50,7 @@
       <% [
         ["01", "Connect GitHub", "Sign in with OAuth. Anchor reads your repositories — no configuration needed."],
         ["02", "Pick a repo", "Choose any repository. Anchor detects the framework, runtime, and port automatically."],
-        ["03", "Add env vars", "Set secrets once. They're encrypted at rest and injected into Cloud Run at deploy time."],
+        ["03", "Add env vars", "Set secrets once. They're encrypted at rest and injected into your app at deploy time."],
         ["04", "Deploy", "Click Deploy. Watch the build log stream live. Get a public URL when it's done."]
       ].each do |num, title, desc| %>
         <div class="bg-[var(--anchor-bg-1)] p-8">
@@ -81,7 +88,7 @@
         ],
         [
           "AI error explanation",
-          "When a deploy fails, Claude reads the last 100 log lines and explains what went wrong in plain English — and what to do about it.",
+          "When a deploy fails, Anchor tags the error category with a concrete fix hint, and (with an AI API key configured) explains the failure in plain English.",
           "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
         ],
         [
@@ -125,7 +132,7 @@
   <section class="py-16 border-t border-[var(--anchor-border)]">
     <p class="text-xs font-semibold tracking-widest text-[var(--anchor-muted)] uppercase text-center mb-3">Cloud providers</p>
     <p class="text-sm text-[var(--anchor-muted)] text-center mb-10 max-w-lg mx-auto">
-      Currently on Google Cloud Run. Soon, Anchor picks the best free tier across every major cloud — automatically.
+      Live today: Google Cloud Run, plus Local Docker for free trials on your own machine. Other clouds below are planned, not yet available.
     </p>
 
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 max-w-4xl mx-auto">
@@ -144,7 +151,7 @@
 
       <%# AWS %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <path d="M14 27.5c0 .5.06.9.16 1.14.1.24.28.5.52.74.08.08.1.18.1.26 0 .12-.08.24-.24.36l-.8.52c-.1.08-.2.1-.3.1-.12 0-.24-.06-.36-.16-.16-.16-.3-.34-.42-.54-.12-.2-.24-.42-.36-.68-.9 1.08-2.04 1.62-3.4 1.62-.98 0-1.76-.28-2.32-.84-.56-.56-.84-1.3-.84-2.2 0-.98.34-1.76 1.04-2.34.7-.58 1.62-.88 2.8-.88.38 0 .78.04 1.2.1.42.06.84.14 1.28.24v-.78c0-.86-.18-1.46-.52-1.82-.36-.36-.98-.52-1.86-.52-.4 0-.8.04-1.22.14-.42.1-.84.24-1.24.42-.18.08-.3.12-.38.14-.08.02-.14.04-.2.04-.16 0-.24-.12-.24-.36v-.56c0-.2.02-.34.08-.42.06-.08.16-.16.32-.24.4-.2.88-.36 1.42-.5.54-.12 1.1-.18 1.7-.18 1.3 0 2.24.3 2.82.9.58.58.88 1.48.88 2.66v3.5zm-4.7 1.76c.38 0 .76-.06 1.14-.2.38-.14.72-.38 1-.72.18-.2.3-.42.36-.68.06-.26.1-.56.1-.9v-.44a10.3 10.3 0 00-1.04-.14 9.8 9.8 0 00-1.02-.06c-.72 0-1.24.14-1.6.44-.36.3-.54.72-.54 1.28 0 .52.14.9.4 1.18.28.16.64.24 1.2.24zm8.66 1.18c-.2 0-.34-.04-.42-.12-.08-.06-.16-.22-.24-.44l-2.68-8.84c-.08-.22-.12-.38-.12-.46 0-.2.08-.3.28-.3h1.12c.22 0 .36.02.44.1.08.06.16.22.22.44l1.92 7.54 1.78-7.54c.06-.22.14-.38.22-.44.08-.08.24-.1.44-.1h.92c.22 0 .36.02.44.1.08.06.16.22.22.44l1.8 7.64 1.96-7.64c.06-.22.14-.38.22-.44.08-.08.22-.1.44-.1h1.06c.2 0 .3.1.3.3 0 .06 0 .14-.02.22-.02.08-.06.2-.12.34l-2.74 8.84c-.08.22-.16.38-.24.44-.08.08-.22.12-.42.12h-.98c-.22 0-.36-.04-.44-.12-.08-.08-.16-.22-.22-.44l-1.78-7.3-1.78 7.3c-.08.22-.14.36-.22.44-.08.08-.22.12-.42.12h-.98zm14.7.3c-.58 0-1.18-.06-1.74-.22-.56-.14-1-.3-1.28-.48-.2-.1-.3-.22-.36-.34a.78.78 0 01-.08-.32v-.58c0-.26.08-.38.28-.38.06 0 .14.02.22.06l.28.14c.36.16.76.3 1.18.38.42.1.84.14 1.26.14.7 0 1.24-.12 1.6-.38.36-.24.56-.6.56-1.06 0-.3-.1-.56-.28-.78-.18-.22-.54-.42-1.02-.58l-1.46-.46c-.72-.22-1.26-.56-1.6-1-.34-.44-.5-.94-.5-1.48 0-.42.1-.8.28-1.14.18-.34.44-.62.76-.84.32-.22.68-.4 1.08-.5.4-.12.82-.16 1.26-.16.22 0 .44.02.68.06.22.02.44.06.64.1.2.06.38.12.56.18.18.06.32.12.42.2.14.08.24.16.3.28.06.1.08.24.08.42v.54c0 .24-.08.38-.28.38-.08 0-.22-.04-.42-.14a5.06 5.06 0 00-2.08-.42c-.62 0-1.1.1-1.42.3-.32.2-.48.5-.48.96 0 .3.1.56.32.76.2.22.56.42 1.06.58l1.42.46c.72.22 1.24.54 1.54.98.3.42.46.9.46 1.42 0 .44-.08.84-.28 1.2-.18.36-.44.68-.76.94-.34.26-.72.44-1.18.58-.46.14-.96.2-1.52.2z" fill="#FF9900"/>
           <path d="M37.1 33.7c-3.3 2.46-8.12 3.76-12.26 3.76-5.8 0-11.02-2.16-14.96-5.74-.3-.28-.02-.66.34-.44 4.26 2.48 9.52 3.98 14.94 3.98 3.66 0 7.68-.76 11.4-2.34.56-.24 1.02.36.54.78z" fill="#FF9900"/>
@@ -155,7 +162,7 @@
 
       <%# Azure %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <path d="M22.1 6h-9.3L4 35.1h8.4l4.8-6.3L22.1 6z" fill="#0078D4"/>
           <path d="M22.1 6l5.8 13.5L18 32.4l16.4 5.2H44L27.2 6H22.1z" fill="#0078D4"/>
@@ -166,7 +173,7 @@
 
       <%# DigitalOcean %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <circle cx="24" cy="20" r="12" fill="#0080FF"/>
           <circle cx="24" cy="20" r="6.5" fill="white"/>
@@ -179,7 +186,7 @@
 
       <%# Hetzner %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <rect width="48" height="48" rx="8" fill="#D50C2D"/>
           <rect x="11" y="11" width="6" height="26" rx="2" fill="white"/>
@@ -191,7 +198,7 @@
 
       <%# Oracle Cloud %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <rect x="4" y="15" width="40" height="18" rx="9" fill="#F80000"/>
           <text x="24" y="27" font-family="Arial,sans-serif" font-size="8" font-weight="700" fill="white" text-anchor="middle">ORACLE</text>
@@ -201,7 +208,7 @@
 
       <%# Cloudflare %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <path d="M34 29.5l.7-2.6c.1-.4-.3-.7-.6-.6l-.8.3C32.3 23 29 20.5 25 20.5c-3 0-5.7 1.7-7.1 4.3H17c-2.8 0-5 2.2-5 5 0 .3 0 .5.1.7H34z" fill="#F6821F"/>
           <path d="M37.5 25.5h-.5c-.7-2.5-3-4.4-5.7-4.4-2.2 0-4.1 1.2-5.1 3H26c-2 0-3.6 1.6-3.6 3.6 0 .1 0 .3.1.4H37.5c.3 0 .5-.2.5-.5v-1.6c0-.3-.2-.5-.5-.5z" fill="#FBAD41"/>
@@ -211,7 +218,7 @@
 
       <%# Fly.io %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <rect width="48" height="48" rx="8" fill="#7B3FF2"/>
           <path d="M14 13h20l-4.5 9.5H24l2.5 5h-5l-2.5-5H14V13z" fill="white" opacity="0.95"/>
@@ -222,7 +229,7 @@
 
       <%# Linode %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <rect width="48" height="48" rx="8" fill="#02B159"/>
           <path d="M13 35V13h5.5v17.5H35V35H13z" fill="white"/>
@@ -232,7 +239,7 @@
 
       <%# Vultr %>
       <div class="relative border border-[var(--anchor-border)] rounded-xl p-4 flex flex-col items-center gap-3 opacity-60 hover:opacity-90 transition-opacity">
-        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Soon</span>
+        <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-[var(--anchor-muted)] bg-[var(--anchor-bg-1)] px-2 border border-[var(--anchor-border)] rounded-full">Planned</span>
         <svg viewBox="0 0 48 48" class="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
           <rect width="48" height="48" rx="8" fill="#007BFC"/>
           <path d="M9 12l10.5 24h9L39 12h-7L24 30.5 16 12H9z" fill="white"/>
@@ -246,7 +253,7 @@
   <%# ── Final CTA ───────────────────────────────────────────────────── %>
   <section class="py-16 text-center border-t border-[var(--anchor-border)]">
     <h2 class="text-3xl font-bold text-[var(--anchor-text)] mb-4">Ready to deploy?</h2>
-    <p class="text-[var(--anchor-muted)] mb-8">Free to use. No credit card. Deploys run in your own cloud account.</p>
+    <p class="text-[var(--anchor-muted)] mb-8">Open source and self-hosted. Deploys run on your own Docker or in your own cloud account.</p>
     <%= button_to "/auth/github", data: { turbo: false },
           class: "inline-flex items-center gap-2.5 font-semibold text-sm px-6 py-3 rounded-lg transition-colors cursor-pointer",
           style: "background: var(--anchor-accent); color: var(--anchor-bg-1);" do %>
@@ -272,12 +279,26 @@
     <% end %>
   </div>
 
+  <%# Most recent deploy failed → put the recovery panel first. %>
+  <% if @latest_failure %>
+    <%= render "shared/failed_deploy_panel", deployment: @latest_failure, show_project: true %>
+  <% end %>
+
   <% if @projects.empty? %>
-    <div class="surface-card border-dashed p-12 text-center">
-      <p class="mb-4 text-sm text-[var(--anchor-muted)]">No projects yet.</p>
-      <%= link_to "Deploy your first app", wizard_path,
-            class: "text-sm font-medium underline underline-offset-2 text-[var(--anchor-text)] hover:text-[var(--anchor-muted)]" %>
-    </div>
+    <%= render layout: "shared/empty_state", locals: {
+          title: "Deploy your first app",
+          body:  "Anchor clones a GitHub repo, detects the framework, builds a container and runs it. " \
+                 "Start with Local Docker — it needs no cloud account and costs nothing.",
+          steps: [
+            "Pick a repository (Anchor scans it for framework, port and env vars).",
+            "Choose where it runs: Local Docker (free) or Google Cloud Run (your GCP account).",
+            "Press Deploy and watch the build log stream live."
+          ]
+        } do %>
+      <%= link_to "Pick a repository", wizard_path, class: "btn-primary" %>
+      <%= button_to "Sync repos from GitHub", sync_repositories_path, method: :post,
+            class: "text-sm text-[var(--anchor-muted)] hover:text-[var(--anchor-text)] underline underline-offset-2" %>
+    <% end %>
   <% else %>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
       <%= render @projects %>
@@ -287,7 +308,12 @@
       <h2 class="section-title mb-4">Recent Deployments</h2>
       <div class="surface-card divide-y divide-[var(--anchor-border)] overflow-hidden">
         <% if @recent_deployments.empty? %>
-          <p class="px-4 py-6 text-center text-sm text-[var(--anchor-muted)]">No deployments yet.</p>
+          <div class="px-4 py-6 text-center text-sm text-[var(--anchor-muted)]" data-testid="no-deployments">
+            No deployments yet. Open
+            <%= link_to @projects.first.name, project_path(@projects.first),
+                  class: "font-medium text-[var(--anchor-text)] underline underline-offset-2" %>
+            and press <span class="font-medium text-[var(--anchor-text)]">Deploy</span> to ship it.
+          </div>
         <% else %>
           <% @recent_deployments.each do |deployment| %>
             <%= render "deployments/row", deployment: deployment, show_project: true %>

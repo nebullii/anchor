@@ -11,7 +11,7 @@ class DeploymentJob < ApplicationJob
       return
     end
 
-    deployment.append_log("Deployment queued — starting pipeline.")
+    deployment.append_log("Deployment queued — starting pipeline (provider: #{deployment.project.provider}).")
     Deployments::PrepareJob.perform_later(deployment_id)
   rescue ActiveRecord::RecordNotFound
     Rails.logger.error("DeploymentJob: deployment #{deployment_id} not found.")

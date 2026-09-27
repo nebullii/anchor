@@ -49,6 +49,7 @@
           data: { repo_picker_target: "branch" } %>
   </div>
 
+  <% unless project.local_docker? %>
   <%# GCP Project ID %>
   <div>
     <%= f.label :gcp_project_id, "GCP Project ID", class: "block text-sm font-medium text-gray-300 mb-1.5" %>
@@ -81,6 +82,7 @@
           { selected: project.gcp_region.presence || current_user.default_gcp_region },
           class: "w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" %>
   </div>
+  <% end %>
 
   <%# Auto-deploy on push %>
   <div class="flex items-start gap-3 p-4 rounded-lg border border-gray-800 bg-gray-900/50">

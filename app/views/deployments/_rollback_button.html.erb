@@ -1,0 +1,16 @@
+<%# locals: (deployment:) %>
+<%# One-click rollback to this deployment's revision. Renders nothing when the
+    deployment is not a valid rollback target (never went live, is already the
+    live revision, or another deployment is in progress). %>
+<% if Deployments::Rollback.eligible?(deployment) %>
+  <%= button_to project_rollback_path(deployment.project, deployment_id: deployment.id),
+        method: :post,
+        form: { id: "rollback_deployment_#{deployment.id}" },
+        data: { turbo_confirm: "Shift 100% of traffic back to revision #{deployment.revision_name}? No rebuild is needed." },
+        class: "mb-2 inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-800 hover:border-amber-600 px-3 py-1.5 rounded-lg transition-colors" do %>
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2M3 10l5-5M3 10l5 5"/>
+    </svg>
+    Roll back to this deployment
+  <% end %>
+<% end %>

@@ -1,0 +1,104 @@
+# Anchor — full local stack in containers. No Ruby, Postgres or Redis needed
+# on the host, and no cloud account.
+#
+#   docker compose up            # first run builds the dev image (~3-5 min)
+#   open http://localhost:3000   # click "Continue as demo user"
+#
+# The web and worker containers mount the host Docker socket so the
+# Local Docker provider can build and run your apps as sibling containers.
+# Deployed apps are published on the host, reachable from these containers
+# via host.docker.internal.
+#
+# Reset everything:  docker compose down -v
+
+x-app: &app
+  build:
+    context: .
+    # Development image, kept inline so it never gets confused with the
+    # production Dockerfile (which bakes in RAILS_ENV=production + gcloud).
+    dockerfile_inline: |
+      FROM docker.io/library/ruby:3.4.4-slim
+      RUN apt-get update -qq && \
+          apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config postgresql-client curl && \
+          rm -rf /var/lib/apt/lists /var/cache/apt/archives
+      # Docker CLI only (talks to the host daemon through the mounted socket).
+      COPY --from=docker.io/library/docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+      WORKDIR /rails
+      ENV BUNDLE_PATH=/usr/local/bundle
+      COPY Gemfile Gemfile.lock ./
+      RUN bundle install --jobs 4
+  image: anchor-dev
+  volumes:
+    - .:/rails
+    - /var/run/docker.sock:/var/run/docker.sock
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment:
+    RAILS_ENV: development
+    DATABASE_URL: postgres://anchor:anchor@postgres:5432/anchor_development
+    REDIS_URL: redis://redis:6379/0
+    # Reads ENCRYPTION_KEY from ./.env when present (bin/setup writes one),
+    # otherwise falls back to a fixed dev-only key. Never use it for real data.
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY:-anchor-dev-only-insecure-key-000000}
+    ANCHOR_DEV_LOGIN: ${ANCHOR_DEV_LOGIN:-1}
+    ANCHOR_LOCAL_DOCKER_HOST: host.docker.internal
+    GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-dev-placeholder}
+    GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-dev-placeholder}
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: anchor
+      POSTGRES_PASSWORD: anchor
+      POSTGRES_DB: anchor_development
+    ports: ["5433:5432"]   # 5433 on the host so it never collides with a local postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "anchor"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7
+    ports: ["6380:6379"]   # 6380 on the host for the same reason
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  web:
+    <<: *app
+    command: >
+      bash -c "rm -f tmp/pids/server.pid &&
+               bin/rails db:prepare &&
+               bin/rails db:seed &&
+               bin/rails tailwindcss:build &&
+               bin/rails server -b 0.0.0.0 -p 3000"
+    ports: ["3000:3000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/up"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  worker:
+    <<: *app
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    depends_on:
+      web:
+        condition: service_healthy   # web runs migrations first
+
+volumes:
+  pgdata:

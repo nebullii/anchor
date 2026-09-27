@@ -1,0 +1,100 @@
+name: Release
+
+# Tag a version to publish the CLI binaries and the MCP server package:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Runs the full CI first, then attaches to a GitHub Release:
+#   anchor_<version>_<os>_<arch>(.exe)   — static Go binaries
+#   anchor-mcp-<version>.tgz             — `npm install -g ./anchor-mcp-<version>.tgz`
+#   SHA256SUMS                           — checksums for everything above
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  cli:
+    name: CLI ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+      - name: Build
+        working-directory: cli
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ext=""; [ "$GOOS" = "windows" ] && ext=".exe"
+          mkdir -p ../dist
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/nebullii/anchor/cli/internal/cli.Version=${version}" \
+            -o "../dist/anchor_${version}_${GOOS}_${GOARCH}${ext}" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  mcp:
+    name: MCP package
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pack
+        working-directory: mcp
+        run: |
+          npm version --no-git-tag-version "${GITHUB_REF_NAME#v}" --allow-same-version
+          npm pack --pack-destination ../dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcp
+          path: dist/*
+
+  publish:
+    name: GitHub Release
+    needs: [cli, mcp]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Anchor $GITHUB_REF_NAME" \
+            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/$GITHUB_REF_NAME/CHANGELOG.md) for what changed." \
+            --verify-tag

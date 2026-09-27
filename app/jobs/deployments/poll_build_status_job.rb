@@ -1,43 +1,46 @@
 module Deployments
-  # Step 3 of the deployment pipeline.
+  # Step 2 of the deployment pipeline.
   #
-  # Polls the Cloud Build status every N seconds using exponential backoff.
-  # Re-enqueues itself until the build reaches a terminal state, then either:
-  #   - SUCCESS  → enqueues DeployToCloudRunJob
-  #   - FAILURE / CANCELLED / TIMEOUT → fails the deployment
+  # Asks the project's provider for the status of deployment.build_ref and
+  # re-enqueues itself with backoff until the build reaches a terminal state:
+  #   - success → enqueues DeployToCloudRunJob (the release step)
+  #   - failure → fails the deployment with the provider's detail
   #
-  # Max wait: ~30 minutes (matches the Cloud Build timeout).
+  # Stateless: needs only the deployment ID, so any worker can run it.
+  # Synchronous providers (LocalDocker) answer :success on the first poll.
+  #
+  # Max wait: ~28 minutes (matches the Cloud Build timeout).
   #
   class PollBuildStatusJob < BaseJob
-    # Cloud Build terminal states
-    TERMINAL_STATES  = %w[SUCCESS FAILURE INTERNAL_ERROR TIMEOUT CANCELLED EXPIRED].freeze
-    SUCCESS_STATE    = "SUCCESS"
-
     # Polling schedule (seconds between attempts):
     # attempt 1-3: every 15s, 4-8: every 30s, 9+: every 60s — up to 40 attempts (~28 min)
     MAX_ATTEMPTS = 40
 
-    def perform(deployment_id, build_id, attempt: 1)
+    # The second positional argument is accepted (only to backfill build_ref) so jobs
+    # enqueued by the previous pipeline — perform(id, build_id, attempt:) —
+    # still deserialize after a deploy.
+    def perform(deployment_id, legacy_build_id = nil, attempt: 1)
       catch(:skip) do
         with_deployment(deployment_id) do |deployment|
           guard_status!(deployment, "building")
 
           if attempt > MAX_ATTEMPTS
             raise Deployments::DeploymentError,
-                  "Cloud Build timed out after #{MAX_ATTEMPTS} polling attempts (~28 minutes)."
+                  "Build timed out after #{MAX_ATTEMPTS} polling attempts (~28 minutes)."
           end
 
-          state = fetch_build_state(deployment, build_id)
-          deployment.append_log("Build status: #{state} (poll ##{attempt})", level: "debug")
+          # Backfill build_ref for deployments started by the old pipeline.
+          if deployment.build_ref.blank? && legacy_build_id.present?
+            deployment.update!(build_ref: legacy_build_id)
+          end
 
-          if TERMINAL_STATES.include?(state)
-            handle_terminal_state(deployment, build_id, state)
-          else
-            # Not done yet — re-enqueue after a backoff delay.
-            delay = backoff_seconds(attempt)
-            deployment.append_log("Build running... checking again in #{delay}s.", level: "debug")
-            PollBuildStatusJob.set(wait: delay.seconds)
-                              .perform_later(deployment_id, build_id, attempt: attempt + 1)
+          status = Providers.translate_errors { Providers.for(deployment.project).build_status(deployment) }
+          deployment.append_log("Build status: #{status.detail || status.state} (poll ##{attempt})", level: "debug")
+
+          case status.state
+          when :success then handle_success(deployment, status)
+          when :failure then raise Deployments::DeploymentError, status.detail.presence || "Build failed."
+          else               reschedule(deployment, attempt)
           end
         end
       end
@@ -45,45 +48,17 @@ module Deployments
 
     private
 
-    def fetch_build_state(deployment, build_id)
-      cmd = [
-        "gcloud builds describe #{Shellwords.escape(build_id)}",
-        "--project=#{Shellwords.escape(deployment.project.gcp_project_id)}",
-        "--format=value(status)"
-      ].join(" ")
-
-      output = run_gcloud!(cmd, deployment: deployment, source: "cloud_build")
-      state = output.lines.map(&:strip).reject(&:empty?).last.to_s
-      raise Deployments::DeploymentError, "Could not fetch build status" if state.blank?
-      state.upcase
+    def handle_success(deployment, status)
+      deployment.update!(cloud_build_log_url: status.log_url) if status.log_url.present?
+      deployment.append_log("Build succeeded.")
+      deployment.append_log("Logs: #{status.log_url}") if status.log_url.present?
+      DeployToCloudRunJob.perform_later(deployment.id)
     end
 
-    def handle_terminal_state(deployment, build_id, state)
-      if state == SUCCESS_STATE
-        log_url = build_log_url(build_id, deployment.project.gcp_project_id)
-        deployment.update!(cloud_build_log_url: log_url)
-        deployment.append_log("Build succeeded.")
-        deployment.append_log("Logs: #{log_url}")
-        DeployToCloudRunJob.perform_later(deployment.id)
-      else
-        detail = fetch_failure_detail(deployment, build_id)
-        raise Deployments::DeploymentError, "Cloud Build #{state.downcase}: #{detail}"
-      end
-    end
-
-    def fetch_failure_detail(deployment, build_id)
-      cmd = [
-        "gcloud builds describe #{Shellwords.escape(build_id)}",
-        "--project=#{Shellwords.escape(deployment.project.gcp_project_id)}",
-        "--format=value(failureInfo.detail)"
-      ].join(" ")
-      run_gcloud!(cmd, deployment: deployment, source: "cloud_build").strip
-    rescue
-      "see Cloud Build logs for details"
-    end
-
-    def build_log_url(build_id, gcp_project_id)
-      "https://console.cloud.google.com/cloud-build/builds/#{build_id}?project=#{gcp_project_id}"
+    def reschedule(deployment, attempt)
+      delay = backoff_seconds(attempt)
+      deployment.append_log("Build running... checking again in #{delay}s.", level: "debug")
+      PollBuildStatusJob.set(wait: delay.seconds).perform_later(deployment.id, attempt: attempt + 1)
     end
 
     # Exponential backoff capped at 60 seconds.

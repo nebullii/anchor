@@ -1,0 +1,22 @@
+id: python_module_not_found
+description: gunicorn is used in CMD but missing from requirements.txt.
+framework: flask
+error_message: "Container failed to start: exec: \"gunicorn\": executable file not found in $PATH"
+logs: |
+  Step 4/7 : RUN pip install --no-cache-dir -r requirements.txt
+  Successfully installed Flask-3.0.3 Jinja2-3.1.4 Werkzeug-3.0.3 itsdangerous-2.2.0 click-8.1.7
+  Step 7/7 : CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app"]
+  Successfully built 4b7a1e0c9d33
+  terminated: Application failed to start: failed to load /usr/local/bin/gunicorn: exec: "gunicorn": executable file not found in $PATH
+  Container called exit(127).
+expect:
+  category: [build_error, runtime_crash, dockerfile_error]
+  mentions_any: [gunicorn, requirements.txt]
+reference:
+  summary: The container cannot start because gunicorn is not installed.
+  likely_cause: The Dockerfile CMD runs gunicorn, but gunicorn is not listed in requirements.txt.
+  fix_steps:
+    - Add gunicorn to requirements.txt
+    - Commit and redeploy
+  confidence: high
+  category: build_error

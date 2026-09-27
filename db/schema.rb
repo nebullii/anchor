@@ -10,9 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_170002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "api_tokens", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "last_used_at"
+    t.string "name", null: false
+    t.datetime "revoked_at"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["token_digest"], name: "index_api_tokens_on_token_digest", unique: true
+    t.index ["user_id"], name: "index_api_tokens_on_user_id"
+  end
 
   create_table "deployment_events", force: :cascade do |t|
     t.datetime "created_at", null: false
@@ -43,8 +55,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
   end
 
   create_table "deployments", force: :cascade do |t|
+    t.jsonb "ai_error_details"
     t.text "ai_error_explanation"
     t.string "branch"
+    t.string "build_ref"
     t.string "cloud_build_id"
     t.string "cloud_build_log_url"
     t.string "commit_author"
@@ -57,9 +71,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
     t.datetime "finished_at"
     t.string "image_url"
     t.bigint "project_id", null: false
+    t.string "revision_name"
+    t.string "revision_url"
     t.string "service_url"
     t.datetime "started_at"
     t.string "status", default: "pending", null: false
+    t.datetime "status_changed_at"
     t.string "triggered_by", default: "manual"
     t.datetime "updated_at", null: false
     t.index ["cloud_build_id"], name: "index_deployments_on_cloud_build_id"
@@ -68,7 +85,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
     t.index ["error_category"], name: "index_deployments_on_error_category"
     t.index ["project_id", "status"], name: "index_deployments_on_project_id_and_status"
     t.index ["project_id"], name: "index_deployments_on_project_id"
-    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text <> ALL (ARRAY[('running'::character varying)::text, ('success'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text]))"
+    t.index ["project_id"], name: "index_deployments_one_active_per_project", unique: true, where: "((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'analyzing'::character varying, 'cloning'::character varying, 'detecting'::character varying, 'building'::character varying, 'deploying'::character varying, 'health_check'::character varying])::text[]))"
+    t.index ["revision_name"], name: "index_deployments_on_revision_name"
+    t.index ["status", "status_changed_at"], name: "index_deployments_on_status_and_status_changed_at"
     t.index ["status"], name: "index_deployments_on_status"
     t.index ["triggered_by"], name: "index_deployments_on_triggered_by"
   end
@@ -90,10 +109,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
     t.boolean "gcp_provisioned", default: false, null: false
     t.datetime "gcp_provisioned_at"
     t.string "gcp_region", default: "us-central1", null: false
+    t.string "health_check_path", default: "/", null: false
     t.string "latest_url"
+    t.string "memory", default: "512Mi", null: false
     t.string "name", null: false
     t.integer "port"
     t.string "production_branch", default: "main"
+    t.string "provider", default: "gcp_cloud_run", null: false
+    t.boolean "public_access", default: true, null: false
     t.bigint "repository_id", null: false
     t.string "runtime"
     t.string "service_name"
@@ -103,9 +126,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.string "webhook_secret"
+    t.string "root_dir"
     t.index ["analysis_status"], name: "index_projects_on_analysis_status"
     t.index ["gcp_project_id"], name: "index_projects_on_gcp_project_id"
     t.index ["gcp_provisioned"], name: "index_projects_on_gcp_provisioned"
+    t.index ["provider"], name: "index_projects_on_provider"
     t.index ["repository_id"], name: "index_projects_on_repository_id"
     t.index ["service_name"], name: "index_projects_on_service_name"
     t.index ["slug"], name: "index_projects_on_slug", unique: true
@@ -139,11 +164,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
 
   create_table "secrets", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.text "encrypted_value", null: false
-    t.string "encrypted_value_iv", null: false
+    t.text "encrypted_value"
+    t.string "encrypted_value_iv"
     t.string "key", null: false
     t.bigint "project_id", null: false
     t.datetime "updated_at", null: false
+    t.text "value"
     t.index ["project_id", "key"], name: "index_secrets_on_project_id_and_key", unique: true
     t.index ["project_id"], name: "index_secrets_on_project_id"
   end
@@ -177,6 +203,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_17_000001) do
     t.index ["github_login"], name: "index_users_on_github_login", unique: true
   end
 
+  create_table "webhook_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_id", null: false
+    t.string "event", null: false
+    t.bigint "project_id"
+    t.string "provider", default: "github", null: false
+    t.datetime "received_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider", "delivery_id"], name: "index_webhook_deliveries_on_provider_and_delivery_id", unique: true
+    t.index ["received_at"], name: "index_webhook_deliveries_on_received_at"
+  end
+
+  add_foreign_key "api_tokens", "users", on_delete: :cascade
   add_foreign_key "deployment_events", "deployments"
   add_foreign_key "deployment_logs", "deployments"
   add_foreign_key "deployments", "projects"

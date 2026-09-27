@@ -64,7 +64,7 @@
 </div>
 
 <%# ── GCP credentials warning ──────────────────────────────────── %>
-<% unless current_user.google_connected? %>
+<% unless current_user.google_connected? || @project.local_docker? %>
   <div class="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl bg-amber-950/50 border border-amber-800/50">
     <div class="flex items-center gap-3">
       <svg class="w-5 h-5 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,7 +178,7 @@
         </div>
         <div class="flex justify-between">
           <span class="text-gray-500">Region</span>
-          <span class="text-gray-200 font-mono text-xs"><%= @project.gcp_region %></span>
+          <span class="text-gray-200 font-mono text-xs"><%= deploy_location(@project) %></span>
         </div>
         <div class="flex justify-between gap-2">
           <span class="text-gray-500 flex-shrink-0">Service</span>

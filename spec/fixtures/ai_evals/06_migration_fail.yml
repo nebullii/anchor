@@ -1,0 +1,24 @@
+id: migration_duplicate_column
+description: A Rails migration adds a column that already exists; db:migrate in the release step fails.
+framework: rails
+error_message: "Release command failed: bin/rails db:migrate exited with status 1"
+logs: |
+  == 20260918120000 AddStatusToOrders: migrating ================================
+  -- add_column(:orders, :status, :string)
+  bin/rails aborted!
+  StandardError: An error has occurred, this and all later migrations canceled: (StandardError)
+  PG::DuplicateColumn: ERROR:  column "status" of relation "orders" already exists
+  /app/db/migrate/20260918120000_add_status_to_orders.rb:3:in 'AddStatusToOrders#change'
+  Caused by:
+  ActiveRecord::StatementInvalid: PG::DuplicateColumn: ERROR:  column "status" of relation "orders" already exists
+expect:
+  category: [database_error]
+  mentions_any: [status, DuplicateColumn, 20260918120000, column_exists]
+reference:
+  summary: The database migration failed because orders.status already exists.
+  likely_cause: Migration 20260918120000_add_status_to_orders adds a column that was already created (e.g. by an earlier migration or manual change).
+  fix_steps:
+    - "Guard the migration with `unless column_exists?(:orders, :status)` or delete the duplicate migration"
+    - Redeploy so db:migrate can complete
+  confidence: high
+  category: database_error
