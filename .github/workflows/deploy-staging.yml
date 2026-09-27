@@ -26,6 +26,10 @@ jobs:
   deploy:
     name: Staging
     needs: ci
+    # Opt-in: deploying to GCP can cost money, so nothing is deployed until the
+    # repository variable ANCHOR_DEPLOY_ENABLED is set to "true". Until then a
+    # merge only runs CI (free for public repositories).
+    if: vars.ANCHOR_DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/_deploy.yml
     secrets: inherit
     with:

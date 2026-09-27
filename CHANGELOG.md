@@ -93,6 +93,7 @@ This release is about safe releases, a provider abstraction, and interfaces for 
 - Production and staging deploys reuse the PR CI as their gate, then deploy Anchor itself the way it
   deploys apps: a no-traffic revision, a smoke test on its tagged URL, a traffic shift, verification and
   automatic rollback. Production waits for approval through a GitHub Environment.
+- Deploys to GCP are opt-in (`ANCHOR_DEPLOY_ENABLED=true`), so merging never starts cloud spend.
 - Keyless GCP auth with Workload Identity Federation (the JSON key remains as a fallback).
 - CI blocks migrations that would break the revision still serving (`script/check_migrations.rb`).
 - `release.yml` publishes CLI binaries, the MCP package and checksums when a `v*` tag is pushed.

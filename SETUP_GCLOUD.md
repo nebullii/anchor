@@ -161,6 +161,11 @@ Then:
 
 ### How deploys run
 
+**Deploys are off by default.** Hosting Anchor on GCP costs money (at minimum the always-on worker),
+so the deploy workflows skip the deploy job, and only run CI, until you set the repository variable
+`ANCHOR_DEPLOY_ENABLED` to `true` (Settings → Secrets and variables → Actions → Variables). Do that
+only after billing and the one-time setup below are in place.
+
 `deploy-staging.yml` (push to `staging`) and `deploy-prod.yml` (push to `main`) both run the full CI,
 including the end-to-end suite, then the shared `_deploy.yml`:
 
